@@ -439,6 +439,79 @@ body {
   transform: translate(var(--knob-x, 0), var(--knob-y, 0));
 }
 
+/* Tutorial coach card. Sits low-centre, out of the way of the run ahead. */
+.coach {
+  position: absolute;
+  left: 50%;
+  /* High in the frame: the sky is empty, the run ahead is not, and the rider
+     sits low-centre. Anywhere lower and the card covers what it is teaching. */
+  top: 13%;
+  transform: translateX(-50%);
+  width: min(430px, 86vw);
+  background: var(--glass);
+  border: 1px solid var(--glass-line);
+  border-radius: var(--radius);
+  padding: 12px 16px 14px;
+  color: var(--white);
+  text-align: center;
+  backdrop-filter: blur(10px);
+}
+.coach.done {
+  background: rgba(31, 102, 180, 0.82);
+}
+.coach-step {
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  color: #a8cdf0;
+  font-weight: 800;
+}
+.coach-title {
+  font-size: 19px;
+  font-weight: 800;
+  margin-top: 2px;
+}
+.coach-text {
+  font-size: 14px;
+  font-weight: 600;
+  margin-top: 3px;
+}
+.coach-why {
+  font-size: 12px;
+  color: #bcd9f5;
+  font-weight: 600;
+  margin-top: 5px;
+  line-height: 1.4;
+}
+.coach-track {
+  height: 5px;
+  border-radius: 3px;
+  background: rgba(168, 205, 240, 0.26);
+  overflow: hidden;
+  margin-top: 10px;
+}
+.coach-fill {
+  height: 100%;
+  width: 100%;
+  transform-origin: left;
+  transform: scaleX(0);
+  background: var(--good);
+  transition: transform 0.12s linear;
+}
+
+/* Vignette that closes in with speed. Sits under everything else in the HUD. */
+.speed-veil {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.25s linear;
+  background: radial-gradient(
+    ellipse 74% 62% at 50% 52%,
+    rgba(20, 69, 111, 0) 55%,
+    rgba(20, 69, 111, 0.36) 100%
+  );
+}
+
 /* ------------------------------------------------------------- Shell ----- */
 
 /* The live mountain shows through: the menu sits on the game, the way the

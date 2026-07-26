@@ -3,6 +3,8 @@ import { RAD, Vec3, clamp } from './core/math.ts';
 import { Session, type GameMode } from './game/session.ts';
 import { LevelEditor } from './game/editor.ts';
 import { InputManager } from './game/input.ts';
+import { AudioEngine } from './game/audio.ts';
+import { Tutorial } from './game/tutorial.ts';
 import { buildPreset } from './game/levels.ts';
 import {
   loadProfile,
@@ -22,6 +24,7 @@ import { NetClient, type RemotePlayer } from './net/client.ts';
 import { Hud } from './ui/hud.ts';
 import { Shell } from './ui/menus.ts';
 import type { LevelDef } from './world/level.ts';
+import { featureBounds } from './world/terrain.ts';
 
 type AppMode = 'menu' | 'riding' | 'editing' | 'replay';
 
@@ -40,6 +43,8 @@ class App {
   private shell: Shell;
   private editor: LevelEditor | null = null;
   private net: NetClient;
+  private audio = new AudioEngine();
+  private tutorial: Tutorial | null = null;
   private mode: AppMode = 'menu';
 
   private replayPlayer: ReplayPlayer | null = null;
@@ -53,7 +58,7 @@ class App {
   private ghostSim: RiderSim;
   private scratch = new Vec3();
   private pointerDown = false;
-  private editorPointer = { x: 0, z: 0, active: false };
+  private editorPointer = { x: 0, z: 0, active: false, valid: false };
   private raycaster = new THREE.Raycaster();
   private ndc = new THREE.Vector2();
 
@@ -101,12 +106,25 @@ class App {
       onRestart: () => {
         this.session.paused = false;
         this.session.restart();
+        this.trickCursor = 0;
+        this.tutorial?.reset();
         this.view.trail.clear();
         this.enterMode('riding');
       },
       onQuitToMenu: () => this.quitToMenu(),
       onProfileChanged: () => this.applyProfile(),
       onOpenEditor: (lvl) => this.openEditor(lvl),
+      onLearn: () => {
+        this.tutorial = new Tutorial();
+        this.tutorial.onStepComplete = (step) => {
+          this.audio.trick(900);
+          this.shell.toast(step.title);
+        };
+        const level = buildPreset('home-park');
+        level.id = 'home-park';
+        this.startRun(level, 'freeride', { announce: false });
+        this.shell.toast('Learn to ride');
+      },
       onEditorPlay: () => {
         if (!this.editor) return;
         this.startRun(this.editor.export(), 'freeride');
@@ -136,6 +154,9 @@ class App {
       },
     });
 
+    this.shell.root.addEventListener('pointerdown', (e) => {
+      if ((e.target as HTMLElement)?.closest('button')) this.audio.uiClick();
+    });
     document.body.append(this.hud.root, this.shell.root);
     this.hud.setVisible(false);
 
@@ -147,6 +168,13 @@ class App {
     this.shell.onSnowfallChanged = () =>
       this.view.loadLevel(this.session.level, this.session.field, this.session.grindSurfaces);
 
+    this.audio.setVolume(this.profile.masterVolume);
+    // Browsers will not start audio outside a user gesture, so arm it on the
+    // first interaction of any kind and then never think about it again.
+    const unlock = () => this.audio.unlock();
+    window.addEventListener('pointerdown', unlock, { once: false });
+    window.addEventListener('keydown', unlock, { once: false });
+
     this.attachCanvasHandlers();
     window.addEventListener('resize', () => this.resize());
     this.resize();
@@ -154,11 +182,13 @@ class App {
   }
 
   private knownGhosts = new Set<string>();
+  private trickCursor = 0;
 
   // -------------------------------------------------------------------------
 
   private applyProfile(): void {
     saveProfile(this.profile);
+    this.audio.setVolume(this.profile.masterVolume);
     const gear = getGear(this.profile.discipline === 'skis' ? this.profile.skiId : this.profile.boardId);
     this.session.setGear(gear);
     this.session.setAssist(this.profile.assist);
@@ -175,11 +205,13 @@ class App {
   }
 
   private startRun(level: LevelDef, mode: GameMode, opts: { announce?: boolean } = {}): void {
+    if (opts.announce !== false) this.tutorial = null;
     this.session.loadLevel(level);
     this.session.restart(mode);
     this.session.paused = false;
     this.view.loadLevel(level, this.session.field, this.session.grindSurfaces);
     this.view.setRider(this.session.gear, this.profile.appearance);
+    this.trickCursor = 0;
     this.hud.setChallenges(this.session.activeChallenges);
     this.enterMode('riding');
     if (opts.announce !== false) this.shell.toast(level.name);
@@ -208,6 +240,10 @@ class App {
 
   private enterMode(mode: AppMode): void {
     this.mode = mode;
+    if (mode !== 'editing') {
+      this.view.setEditorCursor(0, 0, 1, false);
+      this.view.setEditorSelection(null);
+    }
     this.hud.setVisible(mode === 'riding');
     if (mode === 'riding') {
       this.shell.show('none');
@@ -221,6 +257,8 @@ class App {
   }
 
   private quitToMenu(): void {
+    this.tutorial = null;
+    this.hud.setTutorial(null);
     if (this.mode === 'riding') this.finishRun();
     this.session.paused = true;
     this.editor = null;
@@ -309,6 +347,7 @@ class App {
    * rather than a static backdrop.
    */
   private updateMenuScene(dt: number): void {
+    this.audio.quiet();
     const spawn = this.session.level.spawn;
     this.session.sim.reset(spawn.x, spawn.z, spawn.heading);
     poseFromRider(this.session.sim, this.session.pose, {
@@ -350,11 +389,31 @@ class App {
     const riderInput = this.input.update(dt, airborne);
     this.session.update(dt, riderInput);
 
+    // Physics events drive both the one-shot sounds and the impact effects, so
+    // the two always agree about how hard something hit.
+    for (const e of this.session.simEvents) {
+      if (e.type === 'takeoff') {
+        this.audio.pop(clamp((e.speed ?? 8) / 16, 0.3, 1));
+      } else if (e.type === 'landing') {
+        const impact = e.impact ?? 0;
+        this.audio.landing(impact, e.quality ?? 0);
+        this.view.rig.shake = Math.min(0.6, this.view.rig.shake + Math.min(0.45, impact / 22000));
+      } else if (e.type === 'bail') {
+        this.audio.bail(e.speed ?? 0);
+        this.view.rig.shake = Math.min(0.8, this.view.rig.shake + 0.4);
+      } else if (e.type === 'grindStart') {
+        this.audio.grindStart();
+      }
+    }
+
     // Surface session events.
     for (const event of this.session.events.splice(0)) {
       if (event.type === 'trick' && event.trick) {
         this.hud.pushTrick(event.trick);
-        if (event.trick.landed) this.net.reportTrick(event.trick.name, event.trick.points);
+        if (event.trick.landed) {
+          this.net.reportTrick(event.trick.name, event.trick.points);
+          this.audio.trick(event.trick.points);
+        }
         if (!event.trick.landed) {
           this.session.getBoardCenter(this.scratch);
           this.view.burst(this.scratch.x, this.scratch.y, this.scratch.z, 0.7);
@@ -393,6 +452,16 @@ class App {
     this.view.updateRider(dt, this.session.pose, telemetry, this.session.sim.contacts, this.session.sim.velocity);
     this.view.rig.update(dt, this.session.sim);
 
+    if (this.tutorial) {
+      const before = this.trickCursor;
+      const landedNow = this.session.tricks.history.slice(before);
+      this.trickCursor = this.session.tricks.history.length;
+      this.hud.setTutorial(
+        this.tutorial.update({ dt, session: this.session, input: riderInput, landed: landedNow }),
+      );
+    }
+
+    this.audio.update(telemetry, true);
     this.hud.update(dt, telemetry, this.session.summary, this.session.mode, this.session.timeRemaining, this.session.tricks.combo);
     this.hud.setTouchRing(
       this.input.touchActive,
@@ -463,6 +532,18 @@ class App {
       (keys.has('ArrowUp') ? 1 : 0) - (keys.has('ArrowDown') ? 1 : 0),
     );
     this.view.rig.update(dt, this.session.sim);
+
+    // Cursor ring sized to whatever the current tool actually affects.
+    const sculpting = editor.tool === 'raise' || editor.tool === 'lower' || editor.tool === 'smooth';
+    const ringRadius = sculpting ? editor.brush.radius : editor.tool === 'place' ? 4 : 2.5;
+    this.view.setEditorCursor(
+      this.editorPointer.x,
+      this.editorPointer.z,
+      ringRadius,
+      this.editorPointer.valid && editor.tool !== 'select',
+    );
+    const selected = editor.selected;
+    this.view.setEditorSelection(selected ? featureBounds(selected) : null);
 
     if (this.editorRevision !== editor.revision) {
       this.editorRevision = editor.revision;
@@ -540,7 +621,9 @@ class App {
       if (this.mode === 'editing') this.onEditorPointer(e, true);
     });
     this.canvas.addEventListener('pointermove', (e) => {
-      if (this.mode === 'editing' && this.pointerDown) this.onEditorPointer(e, false);
+      if (this.mode !== 'editing') return;
+      if (this.pointerDown) this.onEditorPointer(e, false);
+      else this.trackEditorHover(e);
     });
     const release = () => {
       this.pointerDown = false;
@@ -570,8 +653,11 @@ class App {
     this.raycaster.setFromCamera(this.ndc, this.view.camera);
 
     const hit = this.marchToTerrain(this.raycaster.ray);
+    this.editorPointer.valid = !!hit;
     if (!hit) return;
     const { x, z } = hit;
+    this.editorPointer.x = x;
+    this.editorPointer.z = z;
 
     switch (editor.tool) {
       case 'select':
@@ -609,6 +695,19 @@ class App {
         break;
       default:
         break;
+    }
+  }
+
+  /** Projects the pointer onto the terrain without applying any tool. */
+  private trackEditorHover(e: PointerEvent): void {
+    const rect = this.canvas.getBoundingClientRect();
+    this.ndc.set(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1);
+    this.raycaster.setFromCamera(this.ndc, this.view.camera);
+    const hit = this.marchToTerrain(this.raycaster.ray);
+    this.editorPointer.valid = !!hit;
+    if (hit) {
+      this.editorPointer.x = hit.x;
+      this.editorPointer.z = hit.z;
     }
   }
 

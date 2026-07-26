@@ -47,6 +47,7 @@ export class CameraRig {
   orbitYaw = 0;
   orbitPitch = 0;
   shake = 0;
+  private jitterPhase = 0;
 
   private readonly position = new THREE.Vector3();
   private readonly target = new THREE.Vector3();
@@ -170,6 +171,15 @@ export class CameraRig {
       .add(_tmpVec.set(0, 0.6, 0));
 
     this.camera.position.copy(this.position);
+
+    // Constant low-level jitter at speed. Real footage is never locked off, and
+    // without it 70 km/h looks exactly like 20 km/h from behind.
+    const jitter = Math.max(0, speedT - 0.35) * 0.055;
+    if (jitter > 0.0005) {
+      this.jitterPhase += dt * (7 + speedT * 16);
+      this.camera.position.x += Math.sin(this.jitterPhase * 1.7) * jitter;
+      this.camera.position.y += Math.sin(this.jitterPhase * 2.3 + 1.1) * jitter * 0.8;
+    }
 
     if (this.shake > 0.001) {
       const s = this.shake;

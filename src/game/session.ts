@@ -147,7 +147,8 @@ export class Session {
   activeChallenges: Challenge[] = [];
 
   private summaryState: SessionSummary = blankSummary();
-  private simEvents: SimEvent[] = [];
+  /** Simulation events raised during the most recent update, for audio and FX. */
+  readonly simEvents: SimEvent[] = [];
   private gates: GateFeature[] = [];
   private nextGate = 0;
   private startZ = 0;

@@ -37,6 +37,7 @@ export interface ShellHandlers {
   onQuitToMenu(): void;
   onProfileChanged(): void;
   onOpenEditor(level: LevelDef): void;
+  onLearn(): void;
   onEditorPlay(): void;
   onEditorSave(): void;
   onWatchReplay(replay: Replay): void;
@@ -173,6 +174,7 @@ export class Shell {
       ]),
       el('div', { class: 'menu-stack' }, [
         this.menuCard('Ride', 'Pick a mountain and drop in.', () => this.show('ride')),
+        this.menuCard('Learn', 'Eight steps, from a first turn to a rail.', () => this.handlers.onLearn()),
         this.menuCard('Sessions', 'Ride with other people, live.', () => this.show('multiplayer')),
         this.menuCard('Build', 'Shape terrain and set your own park.', () => {
           const level = generateLevel(Date.now() >>> 0, 'park');
@@ -467,6 +469,25 @@ export class Shell {
             (m) => this.handlers.onCameraMode(m),
           ),
         ]),
+      ]),
+      el('div', { class: 'settings-block' }, [
+        el('h3', {}, ['Sound']),
+        el('p', { class: 'help' }, [
+          'Every sound is synthesised as you ride — the pitch of your edge tracks ' +
+            'how hard it is loaded, and the spray tracks how much it is slipping. ' +
+            'There are no audio files.',
+        ]),
+        slider('Volume', {
+          min: 0,
+          max: 1,
+          step: 0.05,
+          value: this.profile.masterVolume,
+          format: (v) => (v <= 0.001 ? 'off' : `${Math.round(v * 100)}%`),
+          onInput: (v) => {
+            this.profile.masterVolume = v;
+            this.handlers.onProfileChanged();
+          },
+        }),
       ]),
       el('div', { class: 'settings-block' }, [
         el('h3', {}, ['Controls']),

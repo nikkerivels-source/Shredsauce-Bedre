@@ -12,6 +12,7 @@ import { PRESETS, generateLevel } from '../src/game/levels.ts';
 import { Session } from '../src/game/session.ts';
 import { LevelEditor } from '../src/game/editor.ts';
 import { defaultProfile } from '../src/game/storage.ts';
+import { TUTORIAL_STEPS, Tutorial } from '../src/game/tutorial.ts';
 
 describe('level format', () => {
   it('round-trips through JSON', () => {
@@ -367,6 +368,81 @@ describe('editor', () => {
     const input = neutralInput();
     for (let i = 0; i < 600; i++) sim.step(1 / 60, input);
     expect(sim.position.isFinite()).toBe(true);
+  });
+});
+
+describe('tutorial', () => {
+  function ctx(session: Session, over: Partial<{ speed: number; edge: number; carve: number; altitude: number; grind: number }> = {}) {
+    const tel = session.sim.telemetry;
+    if (over.speed !== undefined) tel.speed = over.speed;
+    if (over.edge !== undefined) tel.edgeAngle = over.edge;
+    if (over.carve !== undefined) tel.carveQuality = over.carve;
+    if (over.altitude !== undefined) tel.altitude = over.altitude;
+    if (over.grind !== undefined) tel.grindDistance = over.grind;
+    return { dt: 1 / 30, session, input: neutralInput(), landed: [] };
+  }
+
+  it('walks the steps in order and only on the real measurement', () => {
+    const session = new Session(emptyLevel('tut'), defaultProfile());
+    const tutorial = new Tutorial();
+
+    // Step 1 wants speed. Standing still gets you nowhere.
+    let view = tutorial.update(ctx(session, { speed: 0 }));
+    expect(view.index).toBe(0);
+    expect(view.progress).toBeLessThan(0.2);
+
+    view = tutorial.update(ctx(session, { speed: 12 }));
+    expect(view.index).toBe(1);
+
+    // Settle window: the next step must not start judging immediately.
+    for (let i = 0; i < 60; i++) tutorial.update(ctx(session, { speed: 12 }));
+
+    // Step 2 wants a real edge angle, held.
+    for (let i = 0; i < 40; i++) view = tutorial.update(ctx(session, { speed: 12, edge: 30 }));
+    expect(view.index).toBe(2);
+  });
+
+  it('will not pass the carve step on a skid', () => {
+    const session = new Session(emptyLevel('tut'), defaultProfile());
+    const tutorial = new Tutorial();
+    tutorial.index = 2; // the carve step
+
+    // A big edge angle but a washing-out slip angle is exactly what it must reject.
+    for (let i = 0; i < 200; i++) {
+      tutorial.update(ctx(session, { speed: 14, edge: 35, carve: 0.1 }));
+    }
+    expect(tutorial.index).toBe(2);
+
+    // Clean it up and it passes.
+    let view = tutorial.update(ctx(session, { speed: 14, edge: 35, carve: 0.9 }));
+    for (let i = 0; i < 60 && view.index === 2; i++) {
+      view = tutorial.update(ctx(session, { speed: 14, edge: 35, carve: 0.9 }));
+    }
+    expect(tutorial.index).toBeGreaterThan(2);
+  });
+
+  it('reaches completion through every step', () => {
+    const session = new Session(emptyLevel('tut'), defaultProfile());
+    const tutorial = new Tutorial();
+    const landedTrick = {
+      name: 'frontside 360 melon',
+      points: 900,
+      breakdown: { rotation: 200, flip: 0, grab: 300, air: 100, grind: 0 },
+      quality: 0.9,
+      landed: true,
+      multiplier: 1,
+      spin: 360,
+      inversions: 0,
+      airTime: 1,
+      height: 2,
+      time: 0,
+    };
+    for (let i = 0; i < 4000 && !tutorial.complete; i++) {
+      const base = ctx(session, { speed: 14, edge: 30 * (i % 120 < 60 ? 1 : -1), carve: 0.9, altitude: 1.2, grind: 6 });
+      tutorial.update({ ...base, landed: [landedTrick] });
+    }
+    expect(tutorial.complete).toBe(true);
+    expect(tutorial.index).toBe(TUTORIAL_STEPS.length - 1);
   });
 });
 

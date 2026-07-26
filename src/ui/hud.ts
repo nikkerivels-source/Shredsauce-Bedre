@@ -2,6 +2,7 @@ import { clamp01 } from '../core/math.ts';
 import type { Telemetry } from '../physics/riderSim.ts';
 import type { TrickResult } from '../game/tricks.ts';
 import type { Challenge, GameMode, SessionSummary } from '../game/session.ts';
+import type { TutorialView } from '../game/tutorial.ts';
 import { clear, el, formatScore, formatTime } from './dom.ts';
 
 interface Popup {
@@ -37,6 +38,13 @@ export class Hud {
   private gateCounter: HTMLElement;
   private touchRing: HTMLElement;
   private liveTrick: HTMLElement;
+  private speedVeil: HTMLElement;
+  private coach: HTMLElement;
+  private coachStep: HTMLElement;
+  private coachTitle: HTMLElement;
+  private coachText: HTMLElement;
+  private coachWhy: HTMLElement;
+  private coachFill: HTMLElement;
   private popups: Popup[] = [];
   private bailTimer = 0;
   private liveTrickTimer = 0;
@@ -64,6 +72,21 @@ export class Hud {
     this.gateCounter = el('div', { class: 'gates' });
     this.touchRing = el('div', { class: 'touch-ring' });
     this.liveTrick = el('div', { class: 'live-trick' });
+    this.speedVeil = el('div', { class: 'speed-veil' });
+
+    this.coachStep = el('div', { class: 'coach-step' });
+    this.coachTitle = el('div', { class: 'coach-title' });
+    this.coachText = el('div', { class: 'coach-text' });
+    this.coachWhy = el('div', { class: 'coach-why' });
+    this.coachFill = el('div', { class: 'coach-fill' });
+    this.coach = el('div', { class: 'coach' }, [
+      this.coachStep,
+      this.coachTitle,
+      this.coachText,
+      this.coachWhy,
+      el('div', { class: 'coach-track' }, [this.coachFill]),
+    ]);
+    this.coach.style.display = 'none';
 
     const svgNs = 'http://www.w3.org/2000/svg';
     const svg = document.createElementNS(svgNs, 'svg');
@@ -100,6 +123,8 @@ export class Hud {
       this.airBadge,
       this.balanceWrap,
       this.touchRing,
+      this.coach,
+      this.speedVeil,
     ]);
     this.balanceWrap.style.display = 'none';
     this.touchRing.style.display = 'none';
@@ -119,6 +144,11 @@ export class Hud {
     combo: number,
   ): void {
     this.speedValue.textContent = Math.round(telemetry.speed * 3.6).toString();
+
+    // Edges close in above about 45 km/h. It is a cheap effect but it is the
+    // difference between reading fast and merely being fast.
+    const rush = clamp01((telemetry.speed - 12) / 20);
+    this.speedVeil.style.opacity = (rush * 0.75).toFixed(3);
 
     this.scoreValue.textContent = formatScore(summary.score);
     if (combo > 1.01) {
@@ -255,6 +285,21 @@ export class Hud {
         ]),
       );
     }
+  }
+
+  /** Shows the current tutorial step, or hides the panel when there is none. */
+  setTutorial(view: TutorialView | null): void {
+    if (!view) {
+      this.coach.style.display = 'none';
+      return;
+    }
+    this.coach.style.display = '';
+    this.coach.classList.toggle('done', view.complete);
+    this.coachStep.textContent = view.complete ? 'COMPLETE' : `STEP ${view.index + 1} OF ${view.total}`;
+    this.coachTitle.textContent = view.title;
+    this.coachText.textContent = view.instruction;
+    this.coachWhy.textContent = view.why;
+    this.coachFill.style.transform = `scaleX(${view.progress.toFixed(3)})`;
   }
 
   /** Draws the touch origin ring so the player can see their steering deadzone. */

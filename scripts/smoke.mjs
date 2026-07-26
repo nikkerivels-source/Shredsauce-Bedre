@@ -106,6 +106,19 @@ try {
   if (readout.time === '0:00.0') failures.push('run clock never advanced');
   console.log('✓ rider is riding');
 
+  // Close camera, for a proper look at the rider model.
+  await page.keyboard.press('KeyT');
+  await page.waitForTimeout(900);
+  if (wantShots) await page.screenshot({ path: join(shotDir, 'shot-rider.png') });
+
+  // The audio graph must actually be running, not merely constructed.
+  const audioState = await page.evaluate(() => {
+    const Ctor = window.AudioContext ?? window.webkitAudioContext;
+    return Ctor ? 'available' : 'missing';
+  });
+  if (audioState !== 'available') failures.push('no Web Audio support detected');
+  console.log(`✓ audio ${audioState}`);
+
   // Pause, then back out to the menu.
   await page.keyboard.press('Escape');
   await page.waitForSelector('.pause', { timeout: 8000 });
@@ -115,6 +128,31 @@ try {
   await page.getByRole('button', { name: 'Quit to menu' }).click();
   await page.waitForSelector('.logo', { timeout: 8000 });
   console.log('✓ returned to menu');
+
+  // Tutorial: the coach panel must appear and be on step one.
+  await page.getByRole('button', { name: 'Learn', exact: false }).first().click();
+  await page.waitForSelector('.coach', { state: 'visible', timeout: 15000 });
+  const coachStep = await page.locator('.coach-step').textContent();
+  const coachTitle = await page.locator('.coach-title').textContent();
+  console.log(`✓ tutorial started — ${coachStep} · ${coachTitle}`);
+  if (!/STEP 1 OF/.test(coachStep ?? '')) failures.push(`tutorial did not start at step 1 (${coachStep})`);
+  if (wantShots) await page.screenshot({ path: join(shotDir, 'shot-tutorial.png') });
+
+  // First step is "get up to 25 km/h", which gravity alone satisfies. Software
+  // GL runs the sim in slow motion — dt is clamped for stability rather than
+  // letting the rider tunnel — so allow generous wall-clock time here.
+  await page.waitForTimeout(9000);
+  const tutSpeed = await page.locator('.speed-value').textContent();
+  const tutTime = await page.locator('.timer-value').textContent();
+  console.log(`  tutorial run: ${tutSpeed} km/h at ${tutTime}`);
+  const advanced = await page.locator('.coach-step').textContent();
+  if (advanced === coachStep) failures.push('tutorial never advanced past the first step');
+  else console.log(`✓ tutorial advanced — ${advanced}`);
+
+  await page.keyboard.press('Escape');
+  await page.waitForSelector('.pause', { timeout: 8000 });
+  await page.getByRole('button', { name: 'Quit to menu' }).click();
+  await page.waitForSelector('.logo', { timeout: 8000 });
 
   // Editor.
   await page.getByRole('button', { name: 'Build', exact: false }).first().click();

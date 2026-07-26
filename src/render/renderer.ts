@@ -115,6 +115,60 @@ export class WorldView {
     return this.editorHelpers;
   }
 
+  /**
+   * Ground ring under the editor cursor.
+   *
+   * Placing and sculpting both need to show *where* and *how big* before you
+   * commit. The ring is drawn on top of the terrain rather than into it so it
+   * stays visible over a jump lip.
+   */
+  setEditorCursor(x: number, z: number, radius: number, visible: boolean): void {
+    if (!this.cursorRing) {
+      const geo = new THREE.RingGeometry(0.92, 1, 48);
+      geo.rotateX(-Math.PI / 2);
+      const mat = new THREE.MeshBasicMaterial({
+        color: 0x35c8ff,
+        transparent: true,
+        opacity: 0.85,
+        depthTest: false,
+        side: THREE.DoubleSide,
+      });
+      this.cursorRing = new THREE.Mesh(geo, mat);
+      this.cursorRing.renderOrder = 900;
+      this.editorHelpers.add(this.cursorRing);
+    }
+    this.cursorRing.visible = visible;
+    if (!visible) return;
+    this.cursorRing.position.set(x, this.field.heightAt(x, z) + 0.06, z);
+    this.cursorRing.scale.setScalar(Math.max(0.4, radius));
+  }
+
+  /** Wireframe box around the selected feature. */
+  setEditorSelection(box: { minX: number; minZ: number; maxX: number; maxZ: number } | null): void {
+    if (!this.selectionBox) {
+      const geo = new THREE.BoxGeometry(1, 1, 1);
+      const edges = new THREE.EdgesGeometry(geo);
+      const mat = new THREE.LineBasicMaterial({ color: 0xffd25e, transparent: true, opacity: 0.95, depthTest: false });
+      this.selectionBox = new THREE.LineSegments(edges, mat);
+      this.selectionBox.renderOrder = 901;
+      this.editorHelpers.add(this.selectionBox);
+    }
+    this.selectionBox.visible = !!box;
+    if (!box) return;
+    const cx = (box.minX + box.maxX) / 2;
+    const cz = (box.minZ + box.maxZ) / 2;
+    const height = 4;
+    this.selectionBox.position.set(cx, this.field.heightAt(cx, cz) + height / 2, cz);
+    this.selectionBox.scale.set(
+      Math.max(1, box.maxX - box.minX),
+      height,
+      Math.max(1, box.maxZ - box.minZ),
+    );
+  }
+
+  private cursorRing: THREE.Mesh | null = null;
+  private selectionBox: THREE.LineSegments | null = null;
+
   setQuality(quality: QualitySettings): void {
     this.quality = quality;
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, quality.maxPixelRatio));

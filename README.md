@@ -89,6 +89,16 @@ on. The grip bar is the measured lateral ground reaction in g. The balance meter
 on a rail is your real centre-of-mass offset from the rail line. It doubles as a
 teaching tool: watch the grip bar go red and you can *see* why you washed out.
 
+### The sound is synthesised from the physics
+
+There is not a single audio file in the project. Every sound is generated at
+runtime and wired straight to the solver: the pitch of your edge tracks how far
+the board is over and how hard it is loaded, the spray tracks the measured slip
+speed, the wind opens up with velocity, and a landing's weight comes from the
+peak leg force the leg spring actually recorded. A clean carve sings; break it
+loose and the same layer widens into a roar. No amount of crossfading between
+recorded loops does that.
+
 ### Crashes are simulated too
 
 Lose it and a 16-joint Verlet ragdoll takes over, seeded with the exact velocity
@@ -112,6 +122,8 @@ and spin you were carrying. A crash out of a corked 900 keeps tumbling like one.
 | **Replays** | Recorded and replayed from any camera, saved locally |
 | **Live sessions** | Room-based multiplayer over a bundled WebSocket relay |
 | **Progression** | XP, credits, gear unlocks, challenges, local leaderboard |
+| **Learn to ride** | Eight guided steps, each judged on telemetry rather than button presses |
+| **Sound** | Fully synthesised — wind, edge, spray, rails, impacts, crashes |
 
 ### Look
 
@@ -231,6 +243,8 @@ Point the client at another host with `?server=wss://your-host`.
   share code cannot make the baker allocate gigabytes.
 - **Editor** — undo/redo across placement, movement and sculpting, and rails stay
   on the snow when you sculpt underneath them.
+- **Tutorial** — steps advance in order, the carve step refuses to pass a skid no
+  matter how far the board is over, and the whole sequence reaches completion.
 
 `node scripts/smoke.mjs` boots the built bundle in a real Chromium, clicks
 through the menus into a run, presses actual keys, and checks the rider moved and
