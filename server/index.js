@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Powderline session server.
+ * Bluebird session server.
  *
  * A relay, deliberately. Every client simulates its own rider and receives the
  * others as interpolated poses, so the server never runs physics, never needs to
@@ -25,7 +25,7 @@ const rooms = new Map();
 const server = new WebSocketServer({ port: PORT, maxPayload: MAX_MESSAGE_BYTES });
 
 server.on('listening', () => {
-  console.log(`Powderline session server listening on ws://0.0.0.0:${PORT}`);
+  console.log(`Bluebird session server listening on ws://0.0.0.0:${PORT}`);
 });
 
 server.on('connection', (socket, request) => {
@@ -166,11 +166,11 @@ function send(socket, payload) {
 }
 
 function sanitizeRoom(name) {
-  const cleaned = String(name ?? 'powderline')
+  const cleaned = String(name ?? 'bluebird')
     .toLowerCase()
     .replace(/[^a-z0-9_-]/g, '')
     .slice(0, 32);
-  return cleaned || 'powderline';
+  return cleaned || 'bluebird';
 }
 
 // Drop sockets that stop answering rather than leaving ghosts in the roster.

@@ -153,7 +153,7 @@ export class Shell {
 
     return el('div', { class: 'screen main-screen' }, [
       el('div', { class: 'brand' }, [
-        el('h1', { class: 'logo' }, ['POWDERLINE']),
+        el('h1', { class: 'logo' }, ['BLUEBIRD']),
         el('p', { class: 'tagline' }, ['Freestyle skiing and snowboarding, actually simulated.']),
       ]),
       el('div', { class: 'rider-strip' }, [
@@ -171,8 +171,9 @@ export class Shell {
         ]),
         el('div', { class: 'xp-bar' }, [el('div', { class: 'xp-fill', style: `width:${(progress * 100).toFixed(1)}%` })]),
       ]),
-      el('div', { class: 'menu-grid' }, [
+      el('div', { class: 'menu-stack' }, [
         this.menuCard('Ride', 'Pick a mountain and drop in.', () => this.show('ride')),
+        this.menuCard('Sessions', 'Ride with other people, live.', () => this.show('multiplayer')),
         this.menuCard('Build', 'Shape terrain and set your own park.', () => {
           const level = generateLevel(Date.now() >>> 0, 'park');
           level.name = 'New Line';
@@ -181,7 +182,6 @@ export class Shell {
         }),
         this.menuCard('Gear', 'Boards, skis and how you look on them.', () => this.show('gear')),
         this.menuCard('Replays', 'Watch it back from any angle.', () => this.show('replays')),
-        this.menuCard('Sessions', 'Ride with other people, live.', () => this.show('multiplayer')),
         this.menuCard('Settings', 'Realism, controls and performance.', () => this.show('settings')),
       ]),
     ]);
@@ -223,10 +223,13 @@ export class Shell {
               this.handlers.onRide(level, this.selectedMode);
             },
           }, [
-            el('div', { class: `pill ${preset.difficulty}` }, [difficultyLabel(preset.difficulty)]),
-            el('h4', {}, [preset.name]),
-            el('p', {}, [preset.tagline]),
-            best ? el('div', { class: 'best' }, [`Best ${formatScore(best.score)}`]) : null,
+            el('div', { class: 'thumb' }),
+            el('div', { class: 'card-text' }, [
+              el('div', { class: `pill ${preset.difficulty}` }, [difficultyLabel(preset.difficulty)]),
+              el('h4', {}, [preset.name]),
+              el('p', {}, [preset.tagline]),
+              best ? el('div', { class: 'best' }, [`Best ${formatScore(best.score)}`]) : null,
+            ]),
           ]),
         );
       }
@@ -240,7 +243,9 @@ export class Shell {
         list.append(
           el('div', { class: 'level-card saved' }, [
             el('h4', {}, [entry.level.name]),
-            el('p', {}, [entry.level.notes || `${entry.level.features.length} features`]),
+            el('p', {}, [
+              `Built by ${entry.level.author} · ${entry.level.features.length} features`,
+            ]),
             el('div', { class: 'card-actions' }, [
               button('Ride', () => this.handlers.onRide(entry.level, this.selectedMode), 'btn small'),
               button('Edit', () => this.handlers.onOpenEditor(entry.level), 'btn small ghost'),
@@ -598,7 +603,7 @@ export class Shell {
   }
 
   private buildMultiplayer(): HTMLElement {
-    const roomInput = el('input', { type: 'text', class: 'code-input', placeholder: 'Room name', value: 'powderline' });
+    const roomInput = el('input', { type: 'text', class: 'code-input', placeholder: 'Room name', value: 'bluebird' });
     const roster = el('div', { class: 'roster' });
     const renderRoster = () => {
       clear(roster);
@@ -619,7 +624,7 @@ export class Shell {
       ]),
       el('div', { class: 'import-row' }, [
         roomInput,
-        button('Join', () => this.handlers.onJoinRoom(roomInput.value.trim() || 'powderline', this.profile.name), 'btn small'),
+        button('Join', () => this.handlers.onJoinRoom(roomInput.value.trim() || 'bluebird', this.profile.name), 'btn small'),
         button('Leave', () => this.handlers.onLeaveRoom(), 'btn small ghost'),
       ]),
       el('div', { class: 'status-line' }, [`Status: ${this.connectionStatus}`]),

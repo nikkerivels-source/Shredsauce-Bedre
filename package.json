@@ -1,9 +1,9 @@
 {
-  "name": "powderline",
+  "name": "bluebird",
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Powderline \u2014 a physically simulated freestyle skiing and snowboarding game for the browser.",
+  "description": "Bluebird \u2014 a physically simulated freestyle skiing and snowboarding game for the browser.",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",

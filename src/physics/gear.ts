@@ -44,7 +44,7 @@ export const GEAR_CATALOG: GearSpec[] = [
   {
     id: 'park-155',
     name: 'Loop 155',
-    brandLine: 'Powderline Park',
+    brandLine: 'Bluebird Park',
     discipline: 'snowboard',
     length: 1.55,
     waistWidth: 0.252,
@@ -63,7 +63,7 @@ export const GEAR_CATALOG: GearSpec[] = [
   {
     id: 'jib-149',
     name: 'Butterknife 149',
-    brandLine: 'Powderline Park',
+    brandLine: 'Bluebird Park',
     discipline: 'snowboard',
     length: 1.49,
     waistWidth: 0.248,
@@ -82,7 +82,7 @@ export const GEAR_CATALOG: GearSpec[] = [
   {
     id: 'allmtn-158',
     name: 'Traverse 158',
-    brandLine: 'Powderline Alpine',
+    brandLine: 'Bluebird Alpine',
     discipline: 'snowboard',
     length: 1.58,
     waistWidth: 0.256,
@@ -101,7 +101,7 @@ export const GEAR_CATALOG: GearSpec[] = [
   {
     id: 'carve-163',
     name: 'Scalpel 163',
-    brandLine: 'Powderline Race',
+    brandLine: 'Bluebird Race',
     discipline: 'snowboard',
     length: 1.63,
     waistWidth: 0.238,
@@ -120,7 +120,7 @@ export const GEAR_CATALOG: GearSpec[] = [
   {
     id: 'powder-162',
     name: 'Whale 162',
-    brandLine: 'Powderline Alpine',
+    brandLine: 'Bluebird Alpine',
     discipline: 'snowboard',
     length: 1.62,
     waistWidth: 0.272,
@@ -139,7 +139,7 @@ export const GEAR_CATALOG: GearSpec[] = [
   {
     id: 'twin-172',
     name: 'Fulcrum 172',
-    brandLine: 'Powderline Park',
+    brandLine: 'Bluebird Park',
     discipline: 'skis',
     length: 1.72,
     waistWidth: 0.094,
@@ -158,7 +158,7 @@ export const GEAR_CATALOG: GearSpec[] = [
   {
     id: 'jib-166',
     name: 'Feather 166',
-    brandLine: 'Powderline Park',
+    brandLine: 'Bluebird Park',
     discipline: 'skis',
     length: 1.66,
     waistWidth: 0.088,
@@ -177,7 +177,7 @@ export const GEAR_CATALOG: GearSpec[] = [
   {
     id: 'gs-183',
     name: 'Meridian 183',
-    brandLine: 'Powderline Race',
+    brandLine: 'Bluebird Race',
     discipline: 'skis',
     length: 1.83,
     waistWidth: 0.068,
@@ -196,7 +196,7 @@ export const GEAR_CATALOG: GearSpec[] = [
   {
     id: 'pow-188',
     name: 'Displacement 188',
-    brandLine: 'Powderline Alpine',
+    brandLine: 'Bluebird Alpine',
     discipline: 'skis',
     length: 1.88,
     waistWidth: 0.116,

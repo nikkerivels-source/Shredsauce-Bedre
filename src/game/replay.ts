@@ -215,7 +215,7 @@ function applyFrame(f: ReplayFrame, out: ReplaySample): ReplaySample {
 
 const _target = new Quat();
 
-const REPLAY_KEY = 'powderline.replays.v1';
+const REPLAY_KEY = 'bluebird.replays.v1';
 
 export function loadReplays(): Replay[] {
   try {

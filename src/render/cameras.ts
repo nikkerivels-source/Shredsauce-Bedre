@@ -61,7 +61,8 @@ export class CameraRig {
 
   constructor(field: Heightfield, aspect = 1.7) {
     this.field = field;
-    this.camera = new THREE.PerspectiveCamera(68, aspect, 0.12, 3000);
+    // Far plane reaches past the outermost ridge of the mountain backdrop.
+    this.camera = new THREE.PerspectiveCamera(68, aspect, 0.12, 7000);
     this.camera.position.set(0, 12, -12);
   }
 
@@ -182,6 +183,27 @@ export class CameraRig {
     const fov = opts.speedFov === false ? preset.fov : preset.fov + speedT * 12;
     this.applyFov(dt, fov);
   }
+
+  /**
+   * Slow orbit used behind the menus, so the title screen is a live shot of the
+   * mountain you are about to ride rather than a still image.
+   */
+  showcase(dt: number, focus: THREE.Vector3, radius = 62): void {
+    this.showcaseAngle += dt * 0.05;
+    const height = radius * 0.42;
+    this.camera.up.set(0, 1, 0);
+    this.camera.position.set(
+      focus.x + Math.sin(this.showcaseAngle) * radius,
+      focus.y + height,
+      focus.z + Math.cos(this.showcaseAngle) * radius,
+    );
+    const ground = this.field.heightAt(this.camera.position.x, this.camera.position.z);
+    if (this.camera.position.y < ground + 4) this.camera.position.y = ground + 4;
+    this.camera.lookAt(focus.x, focus.y + 2, focus.z);
+    this.applyFov(dt, 52);
+  }
+
+  private showcaseAngle = 0.7;
 
   /** Points the camera at a spot on the hill, used by the editor and menus. */
   frame(target: THREE.Vector3, distance: number, yaw: number, pitch: number): void {

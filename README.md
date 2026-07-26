@@ -1,7 +1,12 @@
-# Powderline
+# Bluebird
 
 Freestyle skiing and snowboarding for the browser, built on a real carving and
 aerial simulation rather than a scripted one.
+
+*Bluebird* is what riders call a clear, cold, blue-sky day after a storm — the
+one you wait all season for. The whole game is built around that light: pale
+snow, a layered range on the horizon, and one solid blue running through the
+interface.
 
 It runs on desktop and on a phone, from a single static build. There is no
 install, no account, and nothing to buy.
@@ -107,6 +112,14 @@ and spin you were carrying. A crash out of a corked 900 keeps tumbling like one.
 | **Replays** | Recorded and replayed from any camera, saved locally |
 | **Live sessions** | Room-based multiplayer over a bundled WebSocket relay |
 | **Progression** | XP, credits, gear unlocks, challenges, local leaderboard |
+
+### Look
+
+Bright and low-poly, on purpose. Near-white snow with groomer corduroy, conifers
+that read as black silhouettes against it, poured-concrete park features, and a
+continuous ridged mountain range closing the horizon in layers that fade into
+haze. The menus sit directly on the live mountain — the title screen is the level
+you are about to ride, orbiting slowly, not a still image.
 
 ---
 

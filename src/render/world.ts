@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { DEG, Vec3, clamp, clamp01, lerp, makeRng } from '../core/math.ts';
+import { DEG, Vec3, clamp, clamp01, fbm2D, lerp, makeRng } from '../core/math.ts';
 import type { Heightfield } from '../world/heightfield.ts';
 import type { LevelDef, PropFeature } from '../world/level.ts';
 import type { GrindSurface } from '../physics/rails.ts';
@@ -14,8 +14,8 @@ import type { GrindSurface } from '../physics/rails.ts';
  */
 export function createSnowMaterial(level: LevelDef): THREE.MeshStandardMaterial {
   const material = new THREE.MeshStandardMaterial({
-    color: 0xf2f7ff,
-    roughness: 0.78,
+    color: 0xfcfdff,
+    roughness: 0.82,
     metalness: 0.0,
     vertexColors: true,
     flatShading: false,
@@ -65,8 +65,8 @@ export function createSnowMaterial(level: LevelDef): THREE.MeshStandardMaterial 
          float slope = 1.0 - clamp(vWorldNormal.y, 0.0, 1.0);
 
          // Steep, wind-scoured pitches lose their loose snow and go blue.
-         vec3 iceTint = vec3(0.74, 0.83, 0.95);
-         diffuseColor.rgb = mix(diffuseColor.rgb, iceTint, smoothstep(0.12, 0.55, slope) * (0.35 + uHardness * 0.4));
+         vec3 iceTint = vec3(0.82, 0.88, 0.97);
+         diffuseColor.rgb = mix(diffuseColor.rgb, iceTint, smoothstep(0.16, 0.62, slope) * (0.28 + uHardness * 0.3));
 
          // Corduroy: fine ridges left by the groomer, across the fall line.
          float cord = sin(vWorldPos.z * 7.5) * 0.5 + 0.5;
@@ -82,7 +82,7 @@ export function createSnowMaterial(level: LevelDef): THREE.MeshStandardMaterial 
          diffuseColor.rgb += sparkle * (0.35 + uHardness * 0.4);
 
          // Keep snow reading as snow rather than as a tinted surface.
-         diffuseColor.rgb = mix(diffuseColor.rgb, vec3(1.0), 0.12);`,
+         diffuseColor.rgb = mix(diffuseColor.rgb, vec3(1.0), 0.2);`,
       );
   };
 
@@ -209,6 +209,8 @@ export interface SkyRig {
   mesh: THREE.Mesh;
   sun: THREE.DirectionalLight;
   ambient: THREE.HemisphereLight;
+  /** Unit vector from the ground toward the sun. */
+  direction: THREE.Vector3;
   update(level: LevelDef): void;
 }
 
@@ -260,7 +262,7 @@ export function createSky(scene: THREE.Scene, level: LevelDef): SkyRig {
 
   // Radius stays well inside the camera far plane; the dome is re-centred on
   // the camera every frame, so it reads as infinitely far without ever clipping.
-  const mesh = new THREE.Mesh(new THREE.SphereGeometry(1400, 32, 20), material);
+  const mesh = new THREE.Mesh(new THREE.SphereGeometry(2600, 32, 20), material);
   mesh.frustumCulled = false;
   mesh.renderOrder = -1000;
   scene.add(mesh);
@@ -286,6 +288,7 @@ export function createSky(scene: THREE.Scene, level: LevelDef): SkyRig {
     mesh,
     sun,
     ambient,
+    direction: new THREE.Vector3(0.4, 0.7, 0.5).normalize(),
     update(next: LevelDef) {
       const w = next.weather;
       // Sun elevation over the day, peaking at solar noon.
@@ -298,6 +301,7 @@ export function createSky(scene: THREE.Scene, level: LevelDef): SkyRig {
         Math.cos(elevation) * Math.cos(azimuth),
       ).normalize();
       uniforms.uSunDirection.value.copy(dir);
+      rig.direction.copy(dir);
 
       // Low sun goes warm and the sky deepens; overcast flattens everything.
       const warmth = 1 - clamp01(Math.sin(elevation) / 0.6);
@@ -317,7 +321,7 @@ export function createSky(scene: THREE.Scene, level: LevelDef): SkyRig {
       ambient.groundColor.set(0xeef3fa);
 
       const fogColor = uniforms.uHorizonColor.value.clone().lerp(WHITE, 0.35 + w.cloud * 0.35);
-      const density = lerp(0.0006, 0.006, clamp01(w.fog * 0.7 + w.cloud * 0.3 + w.snowfall * 0.35));
+      const density = lerp(0.00035, 0.0035, clamp01(w.fog * 0.7 + w.cloud * 0.3 + w.snowfall * 0.35));
       scene.fog = new THREE.FogExp2(fogColor.getHex(), density);
     },
   };
@@ -331,13 +335,224 @@ export function createSky(scene: THREE.Scene, level: LevelDef): SkyRig {
 // ---------------------------------------------------------------------------
 
 const METAL = new THREE.MeshStandardMaterial({ color: 0xb9c2cc, roughness: 0.32, metalness: 0.85 });
-const PLASTIC = new THREE.MeshStandardMaterial({ color: 0x2f3a4a, roughness: 0.55, metalness: 0.1 });
+// Park boxes are poured concrete, the same pale grey as the real thing.
+const CONCRETE = new THREE.MeshStandardMaterial({ color: 0xc2c6ca, roughness: 0.92, metalness: 0.02 });
 const WOOD = new THREE.MeshStandardMaterial({ color: 0x6a5342, roughness: 0.85, metalness: 0 });
 const FLAG = new THREE.MeshStandardMaterial({ color: 0xff5a3c, roughness: 0.7, side: THREE.DoubleSide });
 const TRUNK = new THREE.MeshStandardMaterial({ color: 0x4a3a2c, roughness: 0.95 });
-const NEEDLE = new THREE.MeshStandardMaterial({ color: 0x22402f, roughness: 0.9 });
+const NEEDLE = new THREE.MeshStandardMaterial({ color: 0x1b2c22, roughness: 0.95 });
 const SNOWCAP = new THREE.MeshStandardMaterial({ color: 0xf6faff, roughness: 0.85 });
-const ROCK = new THREE.MeshStandardMaterial({ color: 0x5c5f66, roughness: 0.95, flatShading: true });
+const ROCK = new THREE.MeshStandardMaterial({ color: 0x8d9298, roughness: 0.96, flatShading: true });
+
+
+/**
+ * How far below the level's own surface the ground has fallen by the time it
+ * reaches a point outside the run. The skirt and the mountain range both use it
+ * so the two meet without a seam.
+ */
+function skirtDrop(field: Heightfield, x: number, z: number): number {
+  const cx = (field.minX + field.maxX) / 2;
+  const cz = (field.minZ + field.maxZ) / 2;
+  const halfX = (field.maxX - field.minX) / 2;
+  const halfZ = (field.maxZ - field.minZ) / 2;
+  // Distance beyond the level boundary, measured as a rectangle not a circle.
+  const outX = Math.max(0, Math.abs(x - cx) - halfX);
+  const outZ = Math.max(0, Math.abs(z - cz) - halfZ);
+  return Math.hypot(outX, outZ) * 0.16;
+}
+
+/**
+ * Ground beyond the edge of the run.
+ *
+ * The playable heightfield is a rectangle, so without this you can see over its
+ * edge into empty sky — a hard horizon line with nothing under it. The skirt
+ * extends the boundary outward and gently downward until it reaches the foot of
+ * the mountain range, and because it is welded to the terrain's own edge heights
+ * it can never open a seam.
+ */
+export function buildTerrainSkirt(field: Heightfield, material: THREE.Material, reach = 900): THREE.Mesh {
+  const step = Math.max(1, Math.floor(8 / field.resolution));
+  const loop: Array<{ x: number; z: number; y: number }> = [];
+  const push = (ix: number, iz: number) => {
+    const x = field.worldX(ix);
+    const z = field.worldZ(iz);
+    loop.push({ x, z, y: field.heights[iz * field.nx + ix] });
+  };
+
+  // Walk the boundary once, in order, so the strip closes cleanly.
+  for (let ix = 0; ix < field.nx - 1; ix += step) push(ix, 0);
+  for (let iz = 0; iz < field.nz - 1; iz += step) push(field.nx - 1, iz);
+  for (let ix = field.nx - 1; ix > 0; ix -= step) push(ix, field.nz - 1);
+  for (let iz = field.nz - 1; iz > 0; iz -= step) push(0, iz);
+
+  const cx = (field.minX + field.maxX) / 2;
+  const cz = (field.minZ + field.maxZ) / 2;
+  const bands = [0, reach * 0.25, reach * 0.6, reach];
+  const cols = loop.length;
+  const rows = bands.length;
+
+  const positions = new Float32Array(cols * rows * 3);
+  const colors = new Float32Array(cols * rows * 3);
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const p = loop[c];
+      let dx = p.x - cx;
+      let dz = p.z - cz;
+      const len = Math.hypot(dx, dz) || 1;
+      dx /= len;
+      dz /= len;
+      const out = bands[r];
+      const x = p.x + dx * out;
+      const z = p.z + dz * out;
+      const i = r * cols + c;
+      positions[i * 3] = x;
+      positions[i * 3 + 1] = p.y - skirtDrop(field, x, z);
+      positions[i * 3 + 2] = z;
+      colors[i * 3] = 1;
+      colors[i * 3 + 1] = 1;
+      colors[i * 3 + 2] = 1;
+    }
+  }
+
+  const indices: number[] = [];
+  for (let r = 0; r < rows - 1; r++) {
+    for (let c = 0; c < cols; c++) {
+      const c2 = (c + 1) % cols;
+      const a = r * cols + c;
+      const b = r * cols + c2;
+      const d = (r + 1) * cols + c;
+      const e = (r + 1) * cols + c2;
+      indices.push(a, d, b, b, d, e);
+    }
+  }
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  geometry.setIndex(indices);
+  geometry.computeVertexNormals();
+
+  const mesh = new THREE.Mesh(geometry, material);
+  mesh.name = 'skirt';
+  mesh.receiveShadow = false;
+  mesh.castShadow = false;
+  return mesh;
+}
+
+/** Snow-covered rock of the surrounding range, shaded flat so it faces up. */
+const RIDGE = new THREE.MeshStandardMaterial({
+  color: 0xf4f8ff,
+  roughness: 0.95,
+  metalness: 0,
+  flatShading: true,
+  vertexColors: true,
+});
+
+/**
+ * The mountains that close in the horizon.
+ *
+ * An annular mesh around the level whose height comes from ridged noise in the
+ * angular direction, so it reads as a real range of peaks and cols rather than a
+ * bowl. Three concentric bands at different distances and heights give the
+ * layered, receding look you get on a clear day, and atmospheric fog does the
+ * rest — the farthest band is mostly haze, which is exactly how a distant range
+ * actually looks.
+ *
+ * It is one merged, flat-shaded, non-shadowing mesh: pure backdrop, no cost
+ * beyond a few thousand triangles that never move.
+ */
+export function buildMountainRange(level: LevelDef, field: Heightfield): THREE.Group {
+  const group = new THREE.Group();
+  group.name = 'range';
+
+  const centreX = 0;
+  const centreZ = level.terrain.length * 0.5;
+  const span = Math.max(level.terrain.width, level.terrain.length);
+  const inner = span * 1.0;
+  const outer = span * 4.0;
+  // Tall enough that the crests sit well above the rider's eye line for the
+  // whole descent. The inner rim is anchored to ground that has already fallen
+  // several hundred metres by the time it gets out here, so a range scaled to
+  // the drop alone ends up *below* the camera and you look down onto it.
+  const maxHeight = 780;
+
+  const rings = 26;
+  const cols = 144;
+  const vertexCount = (cols + 1) * (rings + 1);
+  const positions = new Float32Array(vertexCount * 3);
+  const colors = new Float32Array(vertexCount * 3);
+
+  for (let ri = 0; ri <= rings; ri++) {
+    const rt = ri / rings;
+    // Radius grows geometrically so the near ridges get the vertex density and
+    // the far haze does not waste triangles.
+    const radius = inner * Math.pow(outer / inner, rt);
+    // The envelope climbs the whole way out and never comes back down. A range
+    // that dips between ridges shows strips of sky under the skyline, which
+    // reads as water floating above the horizon.
+    const envelope = Math.pow(rt, 0.62);
+
+    for (let ci = 0; ci <= cols; ci++) {
+      const a = (ci / cols) * Math.PI * 2;
+      const cos = Math.cos(a);
+      const sin = Math.sin(a);
+
+      // Ridged noise — folding the field about zero turns rounded hills into
+      // sharp crests, which is what makes a skyline read as mountains rather
+      // than dunes. Sampling in both angle and radius puts peaks at different
+      // distances, which is where the layered look comes from.
+      const n = fbm2D(cos * 2.4 + rt * 1.7, sin * 2.4, level.seed + 11, 4);
+      const ridged = 1 - Math.abs(n);
+      const detail = fbm2D(cos * 8.5 + rt * 5, sin * 8.5, level.seed + 907, 3);
+      const shape = 0.3 + ridged * 0.82 + detail * 0.16;
+      const h = maxHeight * envelope * shape;
+
+      const i = ri * (cols + 1) + ci;
+      const wx = centreX + cos * radius;
+      const wz = centreZ + sin * radius;
+
+      // The inner rim is anchored to the level's own terrain in that direction —
+      // sampling clamps at the boundary — and sunk below it, so the range tucks
+      // under the run instead of leaving a seam.
+      const anchor = field.heightAt(wx, wz) - skirtDrop(field, wx, wz) - 20;
+      positions[i * 3] = wx;
+      positions[i * 3 + 1] = anchor + h;
+      positions[i * 3 + 2] = wz;
+
+      // Faint blue in the hollows, bright white on the crests.
+      const shade = 0.84 + clamp01(shape / 1.2) * 0.16;
+      colors[i * 3] = shade * 0.96;
+      colors[i * 3 + 1] = shade * 0.985;
+      colors[i * 3 + 2] = 1;
+    }
+  }
+
+  const indices: number[] = [];
+  for (let ri = 0; ri < rings; ri++) {
+    for (let ci = 0; ci < cols; ci++) {
+      const a = ri * (cols + 1) + ci;
+      const b = a + 1;
+      const c = a + cols + 1;
+      const d = c + 1;
+      indices.push(a, c, b, b, c, d);
+    }
+  }
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  geometry.setIndex(indices);
+  geometry.computeVertexNormals();
+
+  const mesh = new THREE.Mesh(geometry, RIDGE);
+  mesh.castShadow = false;
+  mesh.receiveShadow = false;
+  // Always drawn: it is the horizon, and culling it pops the skyline in and out.
+  mesh.frustumCulled = false;
+  group.add(mesh);
+
+  return group;
+}
 
 /** Builds meshes for every rail and box in the level. */
 export function buildGrindMeshes(surfaces: readonly GrindSurface[]): THREE.Group {
@@ -357,7 +572,7 @@ export function buildGrindMeshes(surfaces: readonly GrindSurface[]): THREE.Group
       const geometry = isRail
         ? new THREE.CylinderGeometry(surface.halfWidth, surface.halfWidth, length, 12)
         : new THREE.BoxGeometry(surface.halfWidth * 2, 0.12, length);
-      const mesh = new THREE.Mesh(geometry, isRail ? METAL : PLASTIC);
+      const mesh = new THREE.Mesh(geometry, isRail ? METAL : CONCRETE);
       mesh.castShadow = true;
       mesh.receiveShadow = true;
 
@@ -436,18 +651,16 @@ function makePine(x: number, y: number, z: number, scale: number, rng: () => num
   trunk.position.y = height * 0.175;
   g.add(trunk);
 
+  // Three stacked cones, no snow loading: against a white slope a conifer reads
+  // as a near-black silhouette, and capping it just muddies the shape.
   for (let i = 0; i < 3; i++) {
     const t = i / 3;
-    const r = (1.35 - t * 0.75) * scale;
-    const h = (2.0 - t * 0.5) * scale;
-    const cone = new THREE.Mesh(new THREE.ConeGeometry(r, h, 8), i === 0 ? NEEDLE : NEEDLE);
+    const r = (1.2 - t * 0.68) * scale;
+    const h = (2.1 - t * 0.5) * scale;
+    const cone = new THREE.Mesh(new THREE.ConeGeometry(r, h, 7), NEEDLE);
     cone.position.y = height * 0.3 + t * height * 0.42 + h * 0.35;
     cone.castShadow = true;
     g.add(cone);
-    // Snow loading on the branches.
-    const cap = new THREE.Mesh(new THREE.ConeGeometry(r * 0.82, h * 0.42, 8), SNOWCAP);
-    cap.position.y = cone.position.y + h * 0.3;
-    g.add(cap);
   }
   g.position.set(x, y, z);
   g.rotation.y = rng() * Math.PI * 2;
@@ -613,7 +826,7 @@ export function disposeObject(root: THREE.Object3D): void {
   root.parent?.remove(root);
 }
 
-const SHARED_MATERIALS = new Set<THREE.Material>([METAL, PLASTIC, WOOD, FLAG, TRUNK, NEEDLE, SNOWCAP, ROCK]);
+const SHARED_MATERIALS = new Set<THREE.Material>([METAL, CONCRETE, WOOD, FLAG, TRUNK, NEEDLE, SNOWCAP, RIDGE, ROCK]);
 
 export function clampLevelCamera(field: Heightfield, pos: THREE.Vector3, minAbove = 1.2): void {
   const ground = field.heightAt(pos.x, pos.z);

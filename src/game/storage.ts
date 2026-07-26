@@ -2,9 +2,9 @@ import { migrateLevel, type LevelDef } from '../world/level.ts';
 import { defaultAppearance, type RiderAppearance } from '../render/rider.ts';
 import type { Discipline } from '../physics/gear.ts';
 
-const PROFILE_KEY = 'powderline.profile.v1';
-const LIBRARY_KEY = 'powderline.levels.v1';
-const SCORES_KEY = 'powderline.scores.v1';
+const PROFILE_KEY = 'bluebird.profile.v1';
+const LIBRARY_KEY = 'bluebird.levels.v1';
+const SCORES_KEY = 'bluebird.scores.v1';
 
 export interface Profile {
   name: string;
@@ -159,7 +159,7 @@ export async function decodeLevelCode(code: string): Promise<LevelDef> {
   const trimmed = code.trim();
   const version = trimmed.slice(0, 2);
   const body = trimmed.slice(2);
-  if (version !== 'P0' && version !== 'P1') throw new Error('That does not look like a Powderline code.');
+  if (version !== 'P0' && version !== 'P1') throw new Error('That does not look like a Bluebird code.');
 
   const bytes = fromBase64Url(body);
   let json: string;

@@ -295,12 +295,40 @@ class App {
         this.updateReplay(dt);
         break;
       default:
-        this.view.rig.update(dt, this.session.sim);
+        this.updateMenuScene(dt);
         break;
     }
 
     this.view.render(dt);
     requestAnimationFrame(() => this.frame());
+  }
+
+  /**
+   * Keeps the world alive behind the menus: the rider stands at the start of the
+   * run and the camera circles them, so the title screen shows the actual level
+   * rather than a static backdrop.
+   */
+  private updateMenuScene(dt: number): void {
+    const spawn = this.session.level.spawn;
+    this.session.sim.reset(spawn.x, spawn.z, spawn.heading);
+    poseFromRider(this.session.sim, this.session.pose, {
+      grab: null,
+      twist: 0,
+      tuck: 0,
+      goofy: this.profile.goofy,
+    });
+    this.view.updateRider(
+      dt,
+      this.session.pose,
+      this.session.sim.telemetry,
+      [],
+      this.session.sim.velocity,
+    );
+    // Look at a point down the run rather than at the rider's feet, so the
+    // title screen frames the line ahead and the peaks beyond it.
+    const aheadZ = spawn.z + 70;
+    _focus.set(spawn.x, this.session.field.heightAt(spawn.x, aheadZ) + 6, aheadZ);
+    this.view.rig.showcase(dt, _focus);
   }
 
   private updateRiding(dt: number): void {
@@ -485,7 +513,7 @@ class App {
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = `powderline-${Date.now()}.png`;
+      link.download = `bluebird-${Date.now()}.png`;
       link.click();
       URL.revokeObjectURL(url);
     });
@@ -631,6 +659,7 @@ class App {
   }
 }
 
+const _focus = new THREE.Vector3();
 const _r = new Vec3();
 const _u = new Vec3();
 const _f = new Vec3();
@@ -647,7 +676,7 @@ try {
   if (boot) {
     boot.innerHTML = '';
     boot.append(
-      Object.assign(document.createElement('h1'), { textContent: 'Powderline could not start' }),
+      Object.assign(document.createElement('h1'), { textContent: 'Bluebird could not start' }),
       Object.assign(document.createElement('pre'), {
         textContent: error instanceof Error ? `${error.message}\n\n${error.stack ?? ''}` : String(error),
       }),

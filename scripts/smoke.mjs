@@ -67,6 +67,7 @@ try {
   await page.getByRole('button', { name: 'Ride', exact: false }).first().click();
   await page.waitForSelector('.level-card', { timeout: 10000 });
   console.log('✓ level browser rendered');
+  if (wantShots) await page.screenshot({ path: join(shotDir, 'shot-browser.png') });
 
   await page.locator('.level-card').first().click();
   await page.waitForSelector('.hud', { state: 'visible', timeout: 15000 });

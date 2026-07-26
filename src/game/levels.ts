@@ -82,7 +82,7 @@ function base(name: string, seed: number): LevelDef {
   const level = emptyLevel(name);
   level.id = makeId('lvl');
   level.seed = seed >>> 0;
-  level.author = 'Powderline';
+  level.author = 'Bluebird';
   return level;
 }
 

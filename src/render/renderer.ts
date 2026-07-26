@@ -12,6 +12,8 @@ import { RiderMesh, type RiderAppearance } from './rider.ts';
 import {
   Snowfall,
   buildGrindMeshes,
+  buildMountainRange,
+  buildTerrainSkirt,
   buildProps,
   buildTerrainMesh,
   createSky,
@@ -71,6 +73,8 @@ export class WorldView {
   private terrain: THREE.Mesh | null = null;
   private grinds: THREE.Group | null = null;
   private props: THREE.Group | null = null;
+  private range: THREE.Group | null = null;
+  private skirt: THREE.Mesh | null = null;
   private snowMaterial: THREE.MeshStandardMaterial | null = null;
   private sky: SkyRig | null = null;
   private snowfall: Snowfall | null = null;
@@ -132,6 +136,8 @@ export class WorldView {
     if (this.terrain) disposeObject(this.terrain);
     if (this.grinds) disposeObject(this.grinds);
     if (this.props) disposeObject(this.props);
+    if (this.range) disposeObject(this.range);
+    if (this.skirt) disposeObject(this.skirt);
     this.snowMaterial?.dispose();
 
     this.snowMaterial = createSnowMaterial(level);
@@ -144,6 +150,12 @@ export class WorldView {
 
     this.props = buildProps(level, field);
     this.scene.add(this.props);
+
+    this.skirt = buildTerrainSkirt(field, this.snowMaterial);
+    this.scene.add(this.skirt);
+
+    this.range = buildMountainRange(level, field);
+    this.scene.add(this.range);
 
     if (!this.sky) this.sky = createSky(this.scene, level);
     else this.sky.update(level);
@@ -279,12 +291,17 @@ export class WorldView {
     if (this.sky) this.sky.mesh.position.copy(this.camera.position);
 
     // Keep the shadow frustum on the rider so the map resolution is not wasted.
+    //
+    // The offset uses the sky rig's stored sun direction. Re-deriving it by
+    // normalising the light's own world position drifts a little further every
+    // frame as the rider moves down the hill, and within seconds the sun is
+    // somewhere near the horizon and the whole slope goes grey.
     if (this.sky && this.rider) {
       const p = this.rider.group.position;
       const target = this.sky.sun.target;
       target.position.set(p.x, p.y, p.z);
       target.updateMatrixWorld();
-      this.sky.sun.position.copy(target.position).addScaledVector(_sunDir.copy(this.sky.sun.position).normalize(), 120);
+      this.sky.sun.position.copy(target.position).addScaledVector(this.sky.direction, 120);
     }
 
     this.wearTimer += dt;
@@ -309,9 +326,10 @@ export class WorldView {
     if (this.terrain) disposeObject(this.terrain);
     if (this.grinds) disposeObject(this.grinds);
     if (this.props) disposeObject(this.props);
+    if (this.range) disposeObject(this.range);
+    if (this.skirt) disposeObject(this.skirt);
     this.renderer.dispose();
   }
 }
 
 const _normal = new THREE.Vector3();
-const _sunDir = new THREE.Vector3();
