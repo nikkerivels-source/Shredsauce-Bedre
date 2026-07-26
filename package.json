@@ -1,0 +1,31 @@
+{
+  "name": "powderline",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Powderline \u2014 a physically simulated freestyle skiing and snowboarding game for the browser.",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "server": "node server/index.js",
+    "start": "npm run build && concurrently \"npm run preview\" \"npm run server\"",
+    "test:smoke": "npm run build && node scripts/smoke.mjs",
+    "test:all": "npm test && npm run test:smoke"
+  },
+  "dependencies": {
+    "three": "^0.185.1"
+  },
+  "devDependencies": {
+    "@types/three": "^0.185.0",
+    "concurrently": "^9.1.2",
+    "playwright": "^1.62.0",
+    "typescript": "^5.9.3",
+    "vite": "^7.1.5",
+    "vitest": "^3.2.4",
+    "ws": "^8.18.0"
+  }
+}
