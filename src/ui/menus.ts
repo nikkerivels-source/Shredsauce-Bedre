@@ -86,6 +86,7 @@ export class Shell {
     this.screen = screen;
     this.root.style.display = screen === 'none' ? 'none' : '';
     this.root.classList.toggle('compact', screen === 'editor');
+    this.root.classList.toggle('title', screen === 'main');
     clear(this.body);
     switch (screen) {
       case 'main':
@@ -143,7 +144,7 @@ export class Shell {
   }
 
   private backBar(to: Screen = 'main'): HTMLElement {
-    return el('div', { class: 'backbar' }, [button('← Back', () => this.show(to), 'btn ghost')]);
+    return el('div', { class: 'backbar' }, [button('Back', () => this.show(to), 'btn ghost small')]);
   }
 
   private buildMain(): HTMLElement {
@@ -151,48 +152,44 @@ export class Shell {
     const nextAt = xpForLevel(level + 1);
     const prevAt = xpForLevel(level);
     const progress = Math.max(0, Math.min(1, (this.profile.xp - prevAt) / Math.max(1, nextAt - prevAt)));
+    const gear = this.profile.discipline === 'skis' ? this.profile.skiId : this.profile.boardId;
 
-    return el('div', { class: 'screen main-screen' }, [
-      el('div', { class: 'brand' }, [
-        el('h1', { class: 'logo' }, ['BLUEBIRD']),
-        el('p', { class: 'tagline' }, ['Freestyle skiing and snowboarding, actually simulated.']),
+    let n = 0;
+    const item = (label: string, note: string, onClick: () => void) => {
+      n += 1;
+      return el('button', { class: 'nav-item', type: 'button', onclick: onClick }, [
+        el('span', { class: 'nav-index' }, [String(n).padStart(2, '0')]),
+        el('span', { class: 'nav-label' }, [label]),
+        el('span', { class: 'nav-note' }, [note]),
+      ]);
+    };
+
+    return el('div', { class: 'screen title-screen' }, [
+      el('div', { class: 'brand' }, [brandMark(), el('h1', { class: 'logo' }, ['BLUEBIRD'])]),
+      el('p', { class: 'tagline' }, ['Alpine freestyle simulation']),
+      el('nav', { class: 'nav' }, [
+        item('Ride', '7 mountains', () => this.show('ride')),
+        item('Learn', '8 steps', () => this.handlers.onLearn()),
+        item('Sessions', 'Live', () => this.show('multiplayer')),
+        item('Build', 'Editor', () => {
+          const built = generateLevel(Date.now() >>> 0, 'park');
+          built.name = 'New Line';
+          built.author = this.profile.name;
+          this.handlers.onOpenEditor(built);
+        }),
+        item('Garage', getGear(gear).name, () => this.show('gear')),
+        item('Replays', String(loadReplays().length), () => this.show('replays')),
+        item('Settings', '', () => this.show('settings')),
       ]),
       el('div', { class: 'rider-strip' }, [
+        el('div', {}, [el('span', { class: 'strip-label' }, ['Rider']), el('div', { class: 'strip-value' }, [this.profile.name])]),
+        el('div', {}, [el('span', { class: 'strip-label' }, ['Level']), el('div', { class: 'strip-value' }, [String(level)])]),
         el('div', {}, [
-          el('div', { class: 'strip-label' }, ['RIDER']),
-          el('div', { class: 'strip-value' }, [this.profile.name]),
-        ]),
-        el('div', {}, [
-          el('div', { class: 'strip-label' }, ['LEVEL']),
-          el('div', { class: 'strip-value' }, [String(level)]),
-        ]),
-        el('div', {}, [
-          el('div', { class: 'strip-label' }, ['CREDITS']),
+          el('span', { class: 'strip-label' }, ['Credits']),
           el('div', { class: 'strip-value' }, [formatScore(this.profile.credits)]),
         ]),
         el('div', { class: 'xp-bar' }, [el('div', { class: 'xp-fill', style: `width:${(progress * 100).toFixed(1)}%` })]),
       ]),
-      el('div', { class: 'menu-stack' }, [
-        this.menuCard('Ride', 'Pick a mountain and drop in.', () => this.show('ride')),
-        this.menuCard('Learn', 'Eight steps, from a first turn to a rail.', () => this.handlers.onLearn()),
-        this.menuCard('Sessions', 'Ride with other people, live.', () => this.show('multiplayer')),
-        this.menuCard('Build', 'Shape terrain and set your own park.', () => {
-          const level = generateLevel(Date.now() >>> 0, 'park');
-          level.name = 'New Line';
-          level.author = this.profile.name;
-          this.handlers.onOpenEditor(level);
-        }),
-        this.menuCard('Gear', 'Boards, skis and how you look on them.', () => this.show('gear')),
-        this.menuCard('Replays', 'Watch it back from any angle.', () => this.show('replays')),
-        this.menuCard('Settings', 'Realism, controls and performance.', () => this.show('settings')),
-      ]),
-    ]);
-  }
-
-  private menuCard(title: string, description: string, onClick: () => void): HTMLElement {
-    return el('button', { class: 'menu-card', type: 'button', onclick: onClick }, [
-      el('h2', {}, [title]),
-      el('p', {}, [description]),
     ]);
   }
 
@@ -225,13 +222,11 @@ export class Shell {
               this.handlers.onRide(level, this.selectedMode);
             },
           }, [
-            el('div', { class: 'thumb' }),
-            el('div', { class: 'card-text' }, [
-              el('div', { class: `pill ${preset.difficulty}` }, [difficultyLabel(preset.difficulty)]),
-              el('h4', {}, [preset.name]),
-              el('p', {}, [preset.tagline]),
-              best ? el('div', { class: 'best' }, [`Best ${formatScore(best.score)}`]) : null,
-            ]),
+            pisteMark(preset.difficulty),
+            el('div', { class: 'card-text' }, [el('h4', {}, [preset.name]), el('p', {}, [preset.tagline])]),
+            best
+              ? el('div', { class: 'best' }, [el('span', {}, ['Best']), formatScore(best.score)])
+              : el('div', { class: 'best' }, [el('span', {}, ['Best']), '—']),
           ]),
         );
       }
@@ -244,9 +239,9 @@ export class Shell {
       for (const entry of library) {
         list.append(
           el('div', { class: 'level-card saved' }, [
-            el('h4', {}, [entry.level.name]),
-            el('p', {}, [
-              `Built by ${entry.level.author} · ${entry.level.features.length} features`,
+            el('div', { class: 'card-text' }, [
+              el('h4', {}, [entry.level.name]),
+              el('p', {}, [`${entry.level.author} · ${entry.level.features.length} features`]),
             ]),
             el('div', { class: 'card-actions' }, [
               button('Ride', () => this.handlers.onRide(entry.level, this.selectedMode), 'btn small'),
@@ -271,7 +266,7 @@ export class Shell {
 
     return el('div', { class: 'screen' }, [
       this.backBar(),
-      this.header('Ride', 'Seven mountains, plus anything you or anyone else has built.'),
+      this.header('Ride'),
       modeRow,
       el('div', { class: 'import-row' }, [
         codeInput,
@@ -362,7 +357,7 @@ export class Shell {
 
     return el('div', { class: 'screen' }, [
       this.backBar(),
-      this.header('Gear', 'Every number here goes straight into the simulation.'),
+      this.header('Garage', 'Every figure below is used by the simulation.'),
       el('div', { class: 'row' }, [
         el('label', { class: 'field' }, [el('span', { class: 'field-label' }, ['NAME']), nameInput]),
         el('div', { class: 'field' }, [
@@ -425,7 +420,7 @@ export class Shell {
   private buildSettings(): HTMLElement {
     return el('div', { class: 'screen' }, [
       this.backBar(),
-      this.header('Settings', 'How much the game helps, and how hard it works your device.'),
+      this.header('Settings'),
       el('div', { class: 'settings-block' }, [
         el('h3', {}, ['Realism']),
         el('p', { class: 'help' }, [
@@ -618,7 +613,7 @@ export class Shell {
     }
     return el('div', { class: 'screen' }, [
       this.backBar(),
-      this.header('Replays', 'Recorded poses, so they keep working across updates.'),
+      this.header('Replays'),
       list,
     ]);
   }
@@ -638,10 +633,10 @@ export class Shell {
 
     return el('div', { class: 'screen' }, [
       this.backBar(),
-      this.header('Sessions', 'Ride the same mountain as other people, in real time.'),
+      this.header('Sessions'),
       el('p', { class: 'help' }, [
-        'Everyone in a room rides the level whichever player joined first is on. ' +
-          'Run the bundled server with npm run server, or point at your own.',
+        'Everyone in a room rides the level the first player joined on. Run the bundled ' +
+          'server with npm run server, or point at your own with ?server=.',
       ]),
       el('div', { class: 'import-row' }, [
         roomInput,
@@ -873,8 +868,35 @@ function spec(label: string, value: string): HTMLElement {
   ]);
 }
 
-function difficultyLabel(d: string): string {
-  return d === 'green' ? 'EASY' : d === 'blue' ? 'INTERMEDIATE' : d === 'black' ? 'ADVANCED' : 'EXPERT';
+/**
+ * Piste difficulty, in the symbols every resort on earth already uses: a green
+ * circle, a blue square, a black diamond, a double diamond. A player who skis
+ * reads these instantly, and nobody needs the word "INTERMEDIATE" spelled out.
+ */
+function pisteMark(difficulty: string): HTMLElement {
+  const variant = difficulty === 'green' ? '' : difficulty === 'blue' ? 'blue' : difficulty === 'black' ? 'black' : 'double';
+  const pips = difficulty === 'double' ? 2 : 1;
+  return el(
+    'div',
+    { class: `piste ${variant}`.trim(), title: difficulty },
+    Array.from({ length: pips }, () => el('i', {})),
+  );
+}
+
+/** Three ridges. Small enough to work at 34 px, which is where it lives. */
+function brandMark(): SVGSVGElement {
+  const ns = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(ns, 'svg');
+  svg.setAttribute('viewBox', '0 0 32 32');
+  svg.setAttribute('aria-hidden', 'true');
+  const path = document.createElementNS(ns, 'path');
+  path.setAttribute('d', 'M1 26 L11 8 L17 18 L21 11 L31 26 Z');
+  path.setAttribute('fill', '#ffffff');
+  const accent = document.createElementNS(ns, 'path');
+  accent.setAttribute('d', 'M11 8 L17 18 L14 18 Z');
+  accent.setAttribute('fill', '#4d8bff');
+  svg.append(path, accent);
+  return svg;
 }
 
 async function copyToClipboard(text: string): Promise<void> {

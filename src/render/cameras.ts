@@ -198,19 +198,25 @@ export class CameraRig {
    * Slow orbit used behind the menus, so the title screen is a live shot of the
    * mountain you are about to ride rather than a still image.
    */
-  showcase(dt: number, focus: THREE.Vector3, radius = 62): void {
-    this.showcaseAngle += dt * 0.05;
-    const height = radius * 0.42;
+  showcase(dt: number, focus: THREE.Vector3, radius = 74): void {
+    // A slow drift through a limited arc *behind* the focus rather than a full
+    // orbit. A free orbit spends most of its cycle pointed up the hill at blank
+    // snow; staying behind and looking down the fall line always frames the run,
+    // the rider and the skyline together.
+    this.showcaseAngle += dt * 0.11;
+    const arc = Math.PI + Math.sin(this.showcaseAngle) * 0.5;
+    const height = radius * 0.34;
+
     this.camera.up.set(0, 1, 0);
     this.camera.position.set(
-      focus.x + Math.sin(this.showcaseAngle) * radius,
+      focus.x + Math.sin(arc) * radius,
       focus.y + height,
-      focus.z + Math.cos(this.showcaseAngle) * radius,
+      focus.z + Math.cos(arc) * radius,
     );
     const ground = this.field.heightAt(this.camera.position.x, this.camera.position.z);
-    if (this.camera.position.y < ground + 4) this.camera.position.y = ground + 4;
-    this.camera.lookAt(focus.x, focus.y + 2, focus.z);
-    this.applyFov(dt, 52);
+    if (this.camera.position.y < ground + 6) this.camera.position.y = ground + 6;
+    this.camera.lookAt(focus.x, focus.y + 10, focus.z);
+    this.applyFov(dt, 44);
   }
 
   private showcaseAngle = 0.7;

@@ -127,11 +127,21 @@ and spin you were carrying. A crash out of a corked 900 keeps tumbling like one.
 
 ### Look
 
-Bright and low-poly, on purpose. Near-white snow with groomer corduroy, conifers
-that read as black silhouettes against it, poured-concrete park features, and a
-continuous ridged mountain range closing the horizon in layers that fade into
-haze. The menus sit directly on the live mountain — the title screen is the level
-you are about to ride, orbiting slowly, not a still image.
+**The world** is bright and low-poly on purpose: near-white snow with groomer
+corduroy, conifers that read as black silhouettes against it, poured-concrete
+park features, and a continuous ridged mountain range closing the horizon in
+layers that fade into haze.
+
+**The interface** takes its language from alpine race signage — piste maps,
+start-gate timing boards, bib numbers. High contrast, hairline rules, near-square
+corners, tabular figures, and micro-labels in tracked uppercase. Runs are listed
+on a board with the difficulty marks every resort already uses: green circle,
+blue square, black diamond, double diamond. No card carries a paragraph
+explaining what its button does; the label is the control.
+
+The menus render over the live mountain, and the title screen drifts through a
+limited arc behind the start gate so the run, the rider and the skyline are
+always in frame together — the level you are about to ride, not a still image.
 
 ---
 
