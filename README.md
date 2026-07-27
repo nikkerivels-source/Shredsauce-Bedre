@@ -18,7 +18,7 @@ npm run server       # optional: live sessions on ws://localhost:8787
 ```
 
 ```bash
-npm test             # 64 unit tests (physics, tricks, level design, editor, replays)
+npm test             # 70 unit tests (physics, tricks, level design, editor, replays)
 npm run build        # typecheck + production bundle into dist/
 node scripts/smoke.mjs --shots   # drives the built game in a real browser
 ```
@@ -159,6 +159,36 @@ strokes cannot make a staircase — treads that do not overlap leave natural
 ground between them, and treads that do overlap average into a ramp — so the
 urban set is a `ledgeDrop`: a deck, a face, and flat ground below. That is how
 a snow-covered stair set skis anyway.
+
+### You can put your own picture behind the mountain
+
+The editor takes an image off disk and wraps it round the horizon. It is stored
+*inside* the level as inline image data rather than as a link, so a level stays
+one self-contained object that works offline — a linked backdrop would make
+every player who rode the level fetch from a stranger's server the moment they
+dropped in.
+
+That has costs, and they are handled rather than hidden. An upload is decoded,
+downscaled to at most 2048x1024 and re-encoded as JPEG, walking the quality
+down and then halving the resolution until it fits a 900 kB budget; the stored
+size is shown next to the picture. Share codes leave the picture out, because a
+code carrying one is far too long to paste. And a backdrop arriving inside
+someone else's level is a trust boundary: only inline `data:image/png|jpeg|webp`
+survives `sanitizeBackdrop`, with placement values clamped — an `https:` URL,
+an SVG, or anything that is not really an image is dropped.
+
+The picture is trusted near eye level only: full strength at and below the
+horizon, gone by about forty degrees up, where the painted sky takes back over.
+A photograph is not a sphere, and stretching one across the zenith is what makes
+a custom sky look like a smeared thumb-print. The generated mountain range fades
+out as the picture comes in, because it occupies exactly the same band and
+supplying your own horizon is the whole point.
+
+Twenty-two placeable items sit alongside it — trees, rocks, piste markers,
+banners, start arches, safety netting, lift towers and chairs, cabins, tents,
+igloos, snowcats, snow guns, speakers, benches, fire pits, barrels and crates —
+each with a real mesh, picked from a palette that appears when you choose the
+item tool.
 
 ### Crashes are simulated too
 

@@ -5,7 +5,7 @@
  * this shape, so a level is fully reproducible from its JSON (plus its seed).
  */
 
-export const LEVEL_FORMAT_VERSION = 3;
+export const LEVEL_FORMAT_VERSION = 4;
 
 export type FeatureKind =
   | 'kicker'
@@ -19,7 +19,85 @@ export type FeatureKind =
   | 'gate'
   | 'prop';
 
-export type PropKind = 'tree' | 'pine' | 'rock' | 'flag' | 'liftTower' | 'cabin' | 'sign' | 'tent';
+export type PropKind =
+  | 'pine'
+  | 'tree'
+  | 'deadTree'
+  | 'rock'
+  | 'flag'
+  | 'marker'
+  | 'sign'
+  | 'banner'
+  | 'arch'
+  | 'netFence'
+  | 'liftTower'
+  | 'chair'
+  | 'cabin'
+  | 'tent'
+  | 'igloo'
+  | 'snowcat'
+  | 'snowGun'
+  | 'speaker'
+  | 'bench'
+  | 'firePit'
+  | 'barrel'
+  | 'crate';
+
+/** Every placeable item, in the order the editor lists them. */
+export const PROP_KINDS: readonly PropKind[] = [
+  'pine',
+  'tree',
+  'deadTree',
+  'rock',
+  'flag',
+  'marker',
+  'sign',
+  'banner',
+  'arch',
+  'netFence',
+  'liftTower',
+  'chair',
+  'cabin',
+  'tent',
+  'igloo',
+  'snowcat',
+  'snowGun',
+  'speaker',
+  'bench',
+  'firePit',
+  'barrel',
+  'crate',
+];
+
+const PROP_SET = new Set<string>(PROP_KINDS);
+
+export function isPropKind(value: unknown): value is PropKind {
+  return typeof value === 'string' && PROP_SET.has(value);
+}
+
+/**
+ * A picture behind the mountain.
+ *
+ * Held as an inline data URL rather than a link, so a level stays a single
+ * self-contained object that works offline and cannot phone home from someone
+ * else's browser when they ride it.
+ */
+export interface Backdrop {
+  /** `data:image/...;base64,...` only — see `sanitizeBackdrop`. */
+  image: string;
+  /** How strongly it replaces the painted sky, 0-1. */
+  opacity: number;
+  /** Spin about the vertical axis, degrees, to aim the view. */
+  rotation: number;
+  /** Where the horizon sits in the image, 0 = top edge, 1 = bottom. */
+  horizon: number;
+  /** Vertical span of the image across the sky. Larger zooms in. */
+  scale: number;
+}
+
+export function defaultBackdrop(image: string): Backdrop {
+  return { image, opacity: 1, rotation: 0, horizon: 0.5, scale: 1 };
+}
 
 export type RailShape = 'round' | 'flat' | 'square';
 
@@ -209,6 +287,8 @@ export interface LevelDef {
   spawn: { x: number; z: number; heading: number };
   features: Feature[];
   brushes: TerrainBrush[];
+  /** Optional picture drawn behind the terrain, in place of the painted sky. */
+  backdrop: Backdrop | null;
   /** Unix ms; used for sorting in the local library. */
   createdAt: number;
   updatedAt: number;
@@ -265,6 +345,7 @@ export function emptyLevel(name = 'Untitled Line'): LevelDef {
     spawn: { x: 0, z: 24, heading: 0 },
     features: [],
     brushes: [],
+    backdrop: null,
     createdAt: now,
     updatedAt: now,
   };
@@ -344,6 +425,7 @@ export function migrateLevel(raw: unknown): LevelDef {
     spawn: { ...base.spawn, ...(src.spawn as LevelDef['spawn'] | undefined) },
     features: Array.isArray(src.features) ? (src.features as Feature[]).filter(isValidFeature) : [],
     brushes: Array.isArray(src.brushes) ? (src.brushes as TerrainBrush[]).filter(isValidBrush) : [],
+    backdrop: sanitizeBackdrop(src.backdrop),
     createdAt: typeof src.createdAt === 'number' ? src.createdAt : base.createdAt,
     updatedAt: Date.now(),
   };
@@ -386,7 +468,41 @@ function clampNum(v: unknown, lo: number, hi: number, fallback: number): number 
 function isValidFeature(f: unknown): f is Feature {
   if (!f || typeof f !== 'object') return false;
   const c = f as Feature;
-  return typeof c.kind === 'string' && Number.isFinite(c.x) && Number.isFinite(c.z);
+  if (typeof c.kind !== 'string' || !Number.isFinite(c.x) || !Number.isFinite(c.z)) return false;
+  // An unknown item kind from a newer build (or a hand-edited file) becomes a
+  // pine rather than an invisible hole in someone's level.
+  if (c.kind === 'prop' && !isPropKind(c.prop)) c.prop = 'pine';
+  return true;
+}
+
+/** Inline images only, and only ones we would actually decode. */
+const DATA_IMAGE = /^data:image\/(?:png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/;
+
+/** Roughly 3 MB of base64, which is about 2.2 MB of pixels. */
+const MAX_BACKDROP_CHARS = 3_000_000;
+
+/**
+ * Validates a backdrop off a shared level.
+ *
+ * Levels arrive from other people through share codes, so this is a trust
+ * boundary. Only inline base64 image data is allowed: a remote `https:` URL
+ * would make every player's browser fetch from a stranger's server the moment
+ * they dropped in, and anything that is not an image is a script-injection
+ * vector dressed as scenery.
+ */
+export function sanitizeBackdrop(raw: unknown): Backdrop | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const b = raw as Partial<Backdrop>;
+  if (typeof b.image !== 'string') return null;
+  if (b.image.length > MAX_BACKDROP_CHARS) return null;
+  if (!DATA_IMAGE.test(b.image)) return null;
+  return {
+    image: b.image,
+    opacity: clampNum(b.opacity, 0, 1, 1),
+    rotation: clampNum(b.rotation, -180, 180, 0),
+    horizon: clampNum(b.horizon, 0, 1, 0.5),
+    scale: clampNum(b.scale, 0.3, 3, 1),
+  };
 }
 
 function isValidBrush(b: unknown): b is TerrainBrush {

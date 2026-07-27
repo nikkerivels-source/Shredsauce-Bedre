@@ -212,6 +212,8 @@ export interface SkyRig {
   /** Unit vector from the ground toward the sun. */
   direction: THREE.Vector3;
   update(level: LevelDef): void;
+  /** Frees the backdrop texture. */
+  dispose(): void;
 }
 
 const WHITE = new THREE.Color(0xffffff);
@@ -223,6 +225,11 @@ export function createSky(scene: THREE.Scene, level: LevelDef): SkyRig {
     uSunDirection: { value: new THREE.Vector3(0.4, 0.6, 0.7) },
     uSunColor: { value: new THREE.Color(0xfff2d8) },
     uHaze: { value: 0.25 },
+    uBackdrop: { value: null as THREE.Texture | null },
+    uBackdropMix: { value: 0 },
+    uBackdropRotation: { value: 0 },
+    uBackdropHorizon: { value: 0.5 },
+    uBackdropScale: { value: 1 },
   };
 
   const material = new THREE.ShaderMaterial({
@@ -241,6 +248,11 @@ export function createSky(scene: THREE.Scene, level: LevelDef): SkyRig {
       uniform vec3 uSunDirection;
       uniform vec3 uSunColor;
       uniform float uHaze;
+      uniform sampler2D uBackdrop;
+      uniform float uBackdropMix;
+      uniform float uBackdropRotation;
+      uniform float uBackdropHorizon;
+      uniform float uBackdropScale;
       varying vec3 vDir;
 
       void main() {
@@ -256,6 +268,28 @@ export function createSky(scene: THREE.Scene, level: LevelDef): SkyRig {
 
         // Flat light: overcast washes everything toward the horizon colour.
         sky = mix(sky, uHorizonColor * 1.02, uHaze * 0.75);
+
+        // Backdrop picture, wrapped round the horizon as a cylinder.
+        //
+        // A photograph is not a full sphere, so it is only trusted near eye
+        // level: full strength at and below the horizon, gone by about forty
+        // degrees up. Stretching one across the zenith instead is what makes a
+        // custom sky look like a smeared thumb-print, and the painted gradient
+        // above it is better than anything the stretch would produce.
+        if (uBackdropMix > 0.001) {
+          float u = fract(atan(dir.z, dir.x) / 6.2831853 + 0.5 + uBackdropRotation);
+          // three.js uploads textures flipped, so v = 1 is the top of the
+          // picture, while the horizon setting is authored from the top edge.
+          // Hence the inversion; looking up walks v upward, not down.
+          float v = clamp((1.0 - uBackdropHorizon) + dir.y * 0.85 * uBackdropScale, 0.0, 1.0);
+          vec3 picture = texture2D(uBackdrop, vec2(u, v)).rgb;
+          float band = smoothstep(0.68, 0.02, dir.y);
+          // Keep the sun's own glow on top, so the light still agrees with the
+          // shadows the terrain is casting.
+          sky = mix(sky, picture, uBackdropMix * band);
+          sky += uSunColor * disc * 4.0 * uBackdropMix * band;
+        }
+
         gl_FragColor = vec4(sky, 1.0);
       }`,
   });
@@ -284,13 +318,71 @@ export function createSky(scene: THREE.Scene, level: LevelDef): SkyRig {
   const ambient = new THREE.HemisphereLight(0xbcd6ff, 0xdfe9f5, 1.15);
   scene.add(ambient);
 
+  // The loaded backdrop, keyed by the image it came from so a level that keeps
+  // the same picture across an edit does not re-decode it every frame.
+  let backdropKey = '';
+  let backdropTexture: THREE.Texture | null = null;
+
+  let current: LevelDef['backdrop'] = null;
+
+  const applyPlacement = () => {
+    if (!current || !uniforms.uBackdrop.value) {
+      uniforms.uBackdropMix.value = 0;
+      return;
+    }
+    uniforms.uBackdropMix.value = current.opacity;
+    uniforms.uBackdropRotation.value = current.rotation / 360;
+    uniforms.uBackdropHorizon.value = current.horizon;
+    uniforms.uBackdropScale.value = current.scale;
+  };
+
+  const setBackdrop = (backdrop: LevelDef['backdrop']) => {
+    current = backdrop;
+    const key = backdrop?.image ?? '';
+    if (key !== backdropKey) {
+      backdropKey = key;
+      backdropTexture?.dispose();
+      backdropTexture = null;
+      uniforms.uBackdrop.value = null;
+      uniforms.uBackdropMix.value = 0;
+      if (key) {
+        const texture = new THREE.TextureLoader().load(key, () => {
+          // Only switch it on once the pixels are actually there, or the first
+          // frames sample an empty texture and the sky flashes black.
+          //
+          // The load lands several frames after the level did, and update()
+          // only runs on a level or weather change — so the placement has to
+          // be re-applied here as well, or the picture decodes and is never
+          // switched on.
+          uniforms.uBackdrop.value = texture;
+          applyPlacement();
+        });
+        texture.colorSpace = THREE.SRGBColorSpace;
+        // Wraps horizontally because it rings the horizon; clamped vertically
+        // because the top and bottom of a photograph are not periodic.
+        texture.wrapS = THREE.RepeatWrapping;
+        texture.wrapT = THREE.ClampToEdgeWrapping;
+        texture.minFilter = THREE.LinearFilter;
+        texture.generateMipmaps = false;
+        backdropTexture = texture;
+      }
+    }
+    applyPlacement();
+  };
+
   const rig: SkyRig = {
     mesh,
     sun,
     ambient,
     direction: new THREE.Vector3(0.4, 0.7, 0.5).normalize(),
+    dispose() {
+      backdropTexture?.dispose();
+      backdropTexture = null;
+      backdropKey = '';
+    },
     update(next: LevelDef) {
       const w = next.weather;
+      setBackdrop(next.backdrop);
       // Sun elevation over the day, peaking at solar noon.
       const dayFraction = clamp01((w.timeOfDay - 6) / 12);
       const elevation = Math.sin(dayFraction * Math.PI) * 62 * DEG;
@@ -343,6 +435,17 @@ const TRUNK = new THREE.MeshStandardMaterial({ color: 0x4a3a2c, roughness: 0.95 
 const NEEDLE = new THREE.MeshStandardMaterial({ color: 0x1b2c22, roughness: 0.95 });
 const SNOWCAP = new THREE.MeshStandardMaterial({ color: 0xf6faff, roughness: 0.85 });
 const ROCK = new THREE.MeshStandardMaterial({ color: 0x8d9298, roughness: 0.96, flatShading: true });
+const PAINT = new THREE.MeshStandardMaterial({ color: 0x0b5cff, roughness: 0.55, metalness: 0.05 });
+const DARK = new THREE.MeshStandardMaterial({ color: 0x23272f, roughness: 0.7, metalness: 0.1 });
+const GLASS = new THREE.MeshStandardMaterial({ color: 0x1d2b3a, roughness: 0.18, metalness: 0.5 });
+const NET = new THREE.MeshStandardMaterial({
+  color: 0xff7a2f,
+  roughness: 0.9,
+  side: THREE.DoubleSide,
+  transparent: true,
+  opacity: 0.55,
+});
+const EMBER = new THREE.MeshStandardMaterial({ color: 0xff7a1f, emissive: 0xff5a10, emissiveIntensity: 1.4 });
 
 
 /**
@@ -440,6 +543,21 @@ export function buildTerrainSkirt(field: Heightfield, material: THREE.Material, 
 }
 
 /** Snow-covered rock of the surrounding range, shaded flat so it faces up. */
+/**
+ * Fades the procedural range out behind a backdrop picture.
+ *
+ * The generated peaks occupy the same band of sky the backdrop is drawn into,
+ * so leaving them up hides most of the picture behind someone else's mountains
+ * — which is not what supplying your own horizon is for.
+ */
+export function setRangeVisibility(range: THREE.Object3D | null, backdrop: LevelDef['backdrop']): void {
+  const hidden = backdrop ? clamp01(backdrop.opacity) : 0;
+  RIDGE.transparent = hidden > 0.001;
+  RIDGE.opacity = 1 - hidden;
+  RIDGE.depthWrite = hidden < 0.5;
+  if (range) range.visible = hidden < 0.995;
+}
+
 const RIDGE = new THREE.MeshStandardMaterial({
   color: 0xf4f8ff,
   roughness: 0.95,
@@ -733,6 +851,232 @@ function makeProp(prop: PropFeature, y: number, rng: () => number): THREE.Object
       g.add(pole, board);
       g.position.set(prop.x, y, prop.z);
       g.rotation.y = prop.heading * DEG;
+      return g;
+    }
+    case 'deadTree': {
+      const g = new THREE.Group();
+      const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.24, 5.2, 6), TRUNK);
+      trunk.position.y = 2.6;
+      trunk.castShadow = true;
+      g.add(trunk);
+      // Bare limbs, angled up and out. Deterministic from the level's rng, so
+      // the same tree is the same tree on every load.
+      for (let i = 0; i < 5; i++) {
+        const limb = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.09, 1.8, 4), TRUNK);
+        limb.position.y = 2.6 + i * 0.55;
+        limb.rotation.z = (i % 2 ? 1 : -1) * (0.7 + rng() * 0.4);
+        limb.rotation.y = rng() * Math.PI * 2;
+        limb.translateY(0.8);
+        g.add(limb);
+      }
+      g.position.set(prop.x, y, prop.z);
+      g.scale.setScalar(prop.scale);
+      return g;
+    }
+    case 'marker': {
+      const g = new THREE.Group();
+      const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.055, 3, 6), METAL);
+      pole.position.y = 1.5;
+      const tip = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.075, 0.5, 6), FLAG);
+      tip.position.y = 2.85;
+      g.add(pole, tip);
+      g.position.set(prop.x, y, prop.z);
+      g.scale.setScalar(prop.scale);
+      return g;
+    }
+    case 'banner': {
+      const g = new THREE.Group();
+      const span = 6;
+      for (const side of [-1, 1]) {
+        const post = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 2.6, 6), METAL);
+        post.position.set(side * (span / 2), 1.3, 0);
+        g.add(post);
+      }
+      const cloth = new THREE.Mesh(new THREE.PlaneGeometry(span, 1.1), PAINT);
+      cloth.position.y = 2;
+      g.add(cloth);
+      g.position.set(prop.x, y, prop.z);
+      g.rotation.y = prop.heading * DEG;
+      g.scale.setScalar(prop.scale);
+      return g;
+    }
+    case 'arch': {
+      // An inflatable start arch: two legs and a curved top.
+      const g = new THREE.Group();
+      const legGeo = new THREE.CylinderGeometry(0.42, 0.5, 5, 8);
+      for (const side of [-1, 1]) {
+        const leg = new THREE.Mesh(legGeo, PAINT);
+        leg.position.set(side * 5, 2.5, 0);
+        leg.castShadow = true;
+        g.add(leg);
+      }
+      const top = new THREE.Mesh(new THREE.TorusGeometry(5, 0.45, 8, 20, Math.PI), PAINT);
+      top.position.y = 5;
+      g.add(top);
+      g.position.set(prop.x, y, prop.z);
+      g.rotation.y = prop.heading * DEG;
+      g.scale.setScalar(prop.scale);
+      return g;
+    }
+    case 'netFence': {
+      const g = new THREE.Group();
+      const span = 8;
+      for (const side of [-1, 1]) {
+        const post = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 2.2, 6), METAL);
+        post.position.set(side * (span / 2), 1.1, 0);
+        g.add(post);
+      }
+      const net = new THREE.Mesh(new THREE.PlaneGeometry(span, 1.9), NET);
+      net.position.y = 1.05;
+      g.add(net);
+      g.position.set(prop.x, y, prop.z);
+      g.rotation.y = prop.heading * DEG;
+      g.scale.setScalar(prop.scale);
+      return g;
+    }
+    case 'chair': {
+      // A lift chair on its hanger, high enough to pass overhead.
+      const g = new THREE.Group();
+      const hanger = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 3, 6), METAL);
+      hanger.position.y = 8.5;
+      const seat = new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.16, 0.7), PAINT);
+      seat.position.y = 7;
+      seat.castShadow = true;
+      const back = new THREE.Mesh(new THREE.BoxGeometry(2.6, 1.1, 0.14), PAINT);
+      back.position.set(0, 7.55, -0.34);
+      const bar = new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.1, 0.1), METAL);
+      bar.position.set(0, 7.5, 0.5);
+      g.add(hanger, seat, back, bar);
+      g.position.set(prop.x, y, prop.z);
+      g.rotation.y = prop.heading * DEG;
+      g.scale.setScalar(prop.scale);
+      return g;
+    }
+    case 'igloo': {
+      const g = new THREE.Group();
+      const dome = new THREE.Mesh(new THREE.SphereGeometry(2.2, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2), SNOWCAP);
+      dome.castShadow = true;
+      const door = new THREE.Mesh(new THREE.CylinderGeometry(0.7, 0.7, 1.4, 10, 1, false, 0, Math.PI), SNOWCAP);
+      door.rotation.z = Math.PI / 2;
+      door.position.set(0, 0.7, 2);
+      const mouth = new THREE.Mesh(new THREE.CircleGeometry(0.62, 12), DARK);
+      mouth.position.set(0, 0.7, 2.72);
+      g.add(dome, door, mouth);
+      g.position.set(prop.x, y, prop.z);
+      g.rotation.y = prop.heading * DEG;
+      g.scale.setScalar(prop.scale);
+      return g;
+    }
+    case 'snowcat': {
+      const g = new THREE.Group();
+      const body = new THREE.Mesh(new THREE.BoxGeometry(3.2, 1.5, 5.4), FLAG);
+      body.position.y = 1.9;
+      body.castShadow = true;
+      const cab = new THREE.Mesh(new THREE.BoxGeometry(2.6, 1.2, 2.2), GLASS);
+      cab.position.set(0, 3.1, 0.4);
+      const blade = new THREE.Mesh(new THREE.BoxGeometry(4.4, 1.1, 0.3), METAL);
+      blade.position.set(0, 1.1, 3.3);
+      blade.rotation.x = -0.2;
+      for (const side of [-1, 1]) {
+        const track = new THREE.Mesh(new THREE.BoxGeometry(1, 1.1, 5.6), DARK);
+        track.position.set(side * 1.7, 0.75, 0);
+        g.add(track);
+      }
+      g.add(body, cab, blade);
+      g.position.set(prop.x, y, prop.z);
+      g.rotation.y = prop.heading * DEG;
+      g.scale.setScalar(prop.scale);
+      return g;
+    }
+    case 'snowGun': {
+      const g = new THREE.Group();
+      const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.2, 4.6, 8), METAL);
+      mast.position.y = 2.3;
+      mast.castShadow = true;
+      const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.62, 0.72, 1.5, 12), PAINT);
+      barrel.rotation.x = Math.PI / 2 - 0.35;
+      barrel.position.set(0, 4.6, 0.3);
+      const mouth = new THREE.Mesh(new THREE.CircleGeometry(0.58, 12), DARK);
+      mouth.position.set(0, 4.85, 1.0);
+      mouth.rotation.x = 0.35;
+      g.add(mast, barrel, mouth);
+      g.position.set(prop.x, y, prop.z);
+      g.rotation.y = prop.heading * DEG;
+      g.scale.setScalar(prop.scale);
+      return g;
+    }
+    case 'speaker': {
+      const g = new THREE.Group();
+      const stand = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.16, 2.4, 6), METAL);
+      stand.position.y = 1.2;
+      const cab = new THREE.Mesh(new THREE.BoxGeometry(0.7, 1.1, 0.6), DARK);
+      cab.position.y = 2.8;
+      cab.castShadow = true;
+      const cone = new THREE.Mesh(new THREE.CircleGeometry(0.24, 12), METAL);
+      cone.position.set(0, 2.9, 0.31);
+      g.add(stand, cab, cone);
+      g.position.set(prop.x, y, prop.z);
+      g.rotation.y = prop.heading * DEG;
+      g.scale.setScalar(prop.scale);
+      return g;
+    }
+    case 'bench': {
+      const g = new THREE.Group();
+      const seat = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.12, 0.5), WOOD);
+      seat.position.y = 0.55;
+      seat.castShadow = true;
+      const back = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.45, 0.1), WOOD);
+      back.position.set(0, 0.9, -0.22);
+      for (const side of [-1, 1]) {
+        const leg = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.55, 0.45), WOOD);
+        leg.position.set(side * 0.9, 0.28, 0);
+        g.add(leg);
+      }
+      g.add(seat, back);
+      g.position.set(prop.x, y, prop.z);
+      g.rotation.y = prop.heading * DEG;
+      g.scale.setScalar(prop.scale);
+      return g;
+    }
+    case 'firePit': {
+      const g = new THREE.Group();
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(0.85, 0.16, 6, 14), ROCK);
+      ring.rotation.x = Math.PI / 2;
+      ring.position.y = 0.16;
+      const flame = new THREE.Mesh(new THREE.ConeGeometry(0.45, 1.1, 7), EMBER);
+      flame.position.y = 0.7;
+      const glow = new THREE.PointLight(0xff7a2f, 12, 14, 2);
+      glow.position.y = 0.9;
+      g.add(ring, flame, glow);
+      g.position.set(prop.x, y, prop.z);
+      g.scale.setScalar(prop.scale);
+      return g;
+    }
+    case 'barrel': {
+      const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.42, 1.1, 12), FLAG);
+      barrel.position.set(prop.x, y + 0.55 * prop.scale, prop.z);
+      barrel.castShadow = true;
+      barrel.scale.setScalar(prop.scale);
+      return barrel;
+    }
+    case 'crate': {
+      const g = new THREE.Group();
+      const geo = new THREE.BoxGeometry(1, 0.9, 1);
+      const stack: Array<[number, number, number]> = [
+        [0, 0.45, 0],
+        [1.05, 0.45, 0.1],
+        [0.5, 1.35, 0.05],
+      ];
+      for (const [bx, by, bz] of stack) {
+        const crate = new THREE.Mesh(geo, WOOD);
+        crate.position.set(bx, by, bz);
+        crate.rotation.y = rng() * 0.5 - 0.25;
+        crate.castShadow = true;
+        g.add(crate);
+      }
+      g.position.set(prop.x, y, prop.z);
+      g.rotation.y = prop.heading * DEG;
+      g.scale.setScalar(prop.scale);
       return g;
     }
     case 'tree':

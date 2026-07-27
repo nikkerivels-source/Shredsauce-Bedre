@@ -13,12 +13,13 @@ import {
   type Profile,
 } from '../game/storage.ts';
 import { deleteReplay, loadReplays, type Replay } from '../game/replay.ts';
-import type { LevelDef } from '../world/level.ts';
+import { PROP_KINDS, defaultBackdrop, type LevelDef, type PropKind } from '../world/level.ts';
 import { LevelEditor, type EditorTool } from '../game/editor.ts';
 import { CAMERA_LABELS, CAMERA_MODES, type CameraMode } from '../render/cameras.ts';
 import { button, clear, colorField, el, formatScore, formatTime, segmented, slider, toggle } from './dom.ts';
 import { wordmark } from './wordmark.ts';
 import { runStats, trailMap } from './trailmap.ts';
+import { formatBytes, readBackdropImage } from './image.ts';
 
 export type Screen =
   | 'main'
@@ -690,6 +691,97 @@ export class Shell {
 
   // -------------------------------------------------------------------------
 
+  /**
+   * Backdrop picker.
+   *
+   * The picture is stored inside the level as inline image data, so it travels
+   * with the level and works offline. That also means it costs storage, which
+   * is why the size is shown rather than hidden.
+   */
+  private buildBackdropSection(level: LevelDef): HTMLElement {
+    const backdrop = level.backdrop;
+    const file = el('input', {
+      type: 'file',
+      accept: 'image/png,image/jpeg,image/webp',
+      class: 'file-input',
+      onchange: async (e: Event) => {
+        const input = e.target as HTMLInputElement;
+        const picked = input.files?.[0];
+        if (!picked) return;
+        try {
+          const image = await readBackdropImage(picked);
+          level.backdrop = { ...(level.backdrop ?? defaultBackdrop(image.url)), image: image.url };
+          this.onWeatherChanged?.();
+          this.toast(`Backdrop set — ${image.width}x${image.height}, ${formatBytes(image.bytes)}`);
+          this.refreshEditorPanel();
+        } catch (err) {
+          this.toast(err instanceof Error ? err.message : 'Could not read that image.');
+        } finally {
+          input.value = '';
+        }
+      },
+    });
+
+    const body: Array<Node | null> = [
+      el('span', { class: 'field-label' }, ['Backdrop']),
+      el('label', { class: 'file-drop' }, [file, el('span', {}, [backdrop ? 'Replace picture' : 'Choose a picture'])]),
+    ];
+
+    if (backdrop) {
+      const preview = el('div', { class: 'backdrop-preview' });
+      preview.style.backgroundImage = `url("${backdrop.image}")`;
+      const set = (patch: Partial<NonNullable<LevelDef['backdrop']>>) => {
+        if (!level.backdrop) return;
+        level.backdrop = { ...level.backdrop, ...patch };
+        this.onWeatherChanged?.();
+      };
+      body.push(
+        preview,
+        el('div', { class: 'backdrop-size' }, [formatBytes(backdrop.image.length)]),
+        slider('Strength', {
+          min: 0,
+          max: 1,
+          step: 0.02,
+          value: backdrop.opacity,
+          format: (v) => v.toFixed(2),
+          onInput: (v) => set({ opacity: v }),
+        }),
+        slider('Turn', {
+          min: -180,
+          max: 180,
+          step: 1,
+          value: backdrop.rotation,
+          format: (v) => `${v.toFixed(0)}°`,
+          onInput: (v) => set({ rotation: v }),
+        }),
+        slider('Horizon', {
+          min: 0,
+          max: 1,
+          step: 0.01,
+          value: backdrop.horizon,
+          format: (v) => v.toFixed(2),
+          onInput: (v) => set({ horizon: v }),
+        }),
+        slider('Zoom', {
+          min: 0.3,
+          max: 3,
+          step: 0.05,
+          value: backdrop.scale,
+          format: (v) => `${v.toFixed(2)}x`,
+          onInput: (v) => set({ scale: v }),
+        }),
+        el('p', { class: 'help' }, ['Sits around the horizon; the painted sky takes over overhead. Share codes leave it out.']),
+        button('Remove picture', () => {
+          level.backdrop = null;
+          this.onWeatherChanged?.();
+          this.refreshEditorPanel();
+        }, 'btn small danger'),
+      );
+    }
+
+    return el('div', { class: 'editor-backdrop' }, body);
+  }
+
   private buildEditorPanel(): HTMLElement {
     const editor = this.editor;
     if (!editor) return el('div', { class: 'screen' }, [this.header('No level open')]);
@@ -714,7 +806,17 @@ export class Shell {
         props.append(el('p', { class: 'empty' }, ['Nothing selected. Tap a feature on the hill.']));
         return;
       }
-      props.append(el('h3', {}, [feature.kind]));
+      props.append(el('h3', {}, [feature.kind === 'prop' ? itemLabel(feature.prop) : feature.kind]));
+      if (feature.kind === 'prop') {
+        props.append(
+          el('div', { class: 'kind-grid swap' }, PROP_KINDS.map((item) =>
+            button(itemLabel(item), () => {
+              editor.updateSelected({ prop: item });
+              renderProps();
+            }, `btn tiny${feature.prop === item ? ' on' : ''}`),
+          )),
+        );
+      }
       for (const field of LevelEditor.editableFields(feature)) {
         const current = Number((feature as unknown as Record<string, number>)[field.key] ?? 0);
         props.append(
@@ -763,7 +865,7 @@ export class Shell {
         }),
       ]),
       el('div', { class: 'editor-kinds' }, [
-        el('span', { class: 'field-label' }, ['PLACE']),
+        el('span', { class: 'field-label' }, ['Place']),
         el('div', { class: 'kind-grid' }, kinds.map((kind) =>
           button(kind, () => {
             editor.placeKind = kind;
@@ -771,7 +873,21 @@ export class Shell {
             this.refreshEditorPanel();
           }, `btn tiny${editor.placeKind === kind ? ' on' : ''}`),
         )),
+        // The item palette only makes sense once 'prop' is the thing being
+        // placed, so it appears with it rather than sitting there greyed out.
+        editor.placeKind === 'prop'
+          ? el('div', { class: 'item-picker' }, [
+              el('span', { class: 'field-label' }, ['Item']),
+              el('div', { class: 'kind-grid' }, PROP_KINDS.map((item) =>
+                button(itemLabel(item), () => {
+                  editor.placeProp = item;
+                  this.refreshEditorPanel();
+                }, `btn tiny${editor.placeProp === item ? ' on' : ''}`),
+              )),
+            ])
+          : null,
       ]),
+      this.buildBackdropSection(level),
       el('div', { class: 'editor-brush' }, [
         slider('Brush size', {
           min: 2,
@@ -921,6 +1037,11 @@ function pisteMark(difficulty: string): HTMLElement {
     { class: `piste ${variant}`.trim(), title: difficulty },
     Array.from({ length: pips }, () => el('i', {})),
   );
+}
+
+/** Turns a camelCase item id into something readable. */
+function itemLabel(kind: PropKind): string {
+  return kind.replace(/([a-z])([A-Z])/g, '$1 $2').toLowerCase();
 }
 
 /** Figure over label, for the run stats on a level card. */

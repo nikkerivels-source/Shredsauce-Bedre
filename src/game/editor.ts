@@ -7,6 +7,7 @@ import {
   type Feature,
   type FeatureKind,
   type LevelDef,
+  type PropKind,
   type TerrainBrush,
 } from '../world/level.ts';
 import { expandAabb, featureBounds, unionAabb, type Aabb } from '../world/terrain.ts';
@@ -37,6 +38,8 @@ interface Snapshot {
 export class LevelEditor {
   tool: EditorTool = 'select';
   placeKind: FeatureKind = 'kicker';
+  /** Which item the 'prop' kind drops. Ignored for every other kind. */
+  placeProp: PropKind = 'pine';
   brush: BrushSettings = { radius: 9, strength: 1.1, falloff: 0.7 };
   selection: string | null = null;
   /** Bumped whenever geometry changed so the view knows to rebuild. */
@@ -143,6 +146,7 @@ export class LevelEditor {
   place(x: number, z: number, heading = 0): Feature {
     this.pushUndo();
     const feature = makeFeature(this.placeKind, x, z, heading);
+    if (feature.kind === 'prop') feature.prop = this.placeProp;
     this.level.features.push(feature);
     this.selection = feature.id;
     this.rebakeAround(featureBounds(feature));

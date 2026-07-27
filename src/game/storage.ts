@@ -144,7 +144,12 @@ function fromBase64Url(text: string): Uint8Array {
  * "P1" / "P0" prefix records which it is so old codes keep working.
  */
 export async function encodeLevelCode(level: LevelDef): Promise<string> {
-  const json = JSON.stringify(level);
+  // A backdrop is several hundred kilobytes of inline image data. Compressed
+  // and base64'd it is still a code far too long to paste anywhere, so a shared
+  // level travels without its picture and the recipient gets the painted sky.
+  // The editor says so where the picture is chosen.
+  const shareable: LevelDef = level.backdrop ? { ...level, backdrop: null } : level;
+  const json = JSON.stringify(shareable);
   const bytes = new TextEncoder().encode(json);
   if (typeof CompressionStream === 'undefined') return `P0${toBase64Url(bytes)}`;
   try {

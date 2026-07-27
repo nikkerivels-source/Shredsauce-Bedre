@@ -1,5 +1,14 @@
 import { describe, expect, it, beforeEach } from 'vitest';
-import { emptyLevel, makeFeature, migrateLevel, type Feature } from '../src/world/level.ts';
+import {
+  PROP_KINDS,
+  defaultBackdrop,
+  emptyLevel,
+  isPropKind,
+  makeFeature,
+  migrateLevel,
+  sanitizeBackdrop,
+  type Feature,
+} from '../src/world/level.ts';
 import { TerrainBaker, featureBounds } from '../src/world/terrain.ts';
 import { buildGrindSurfaces, makeGrindQuery, queryGrindSurfaces } from '../src/physics/rails.ts';
 import { Vec3 } from '../src/core/math.ts';
@@ -12,7 +21,7 @@ import { PRESETS, generateLevel } from '../src/game/levels.ts';
 import { cliffBand, jumpLine, jumpSpacing, ledgeDrop, spine } from '../src/game/design.ts';
 import { Session } from '../src/game/session.ts';
 import { LevelEditor } from '../src/game/editor.ts';
-import { defaultProfile } from '../src/game/storage.ts';
+import { defaultProfile, decodeLevelCode, encodeLevelCode } from '../src/game/storage.ts';
 import { TUTORIAL_STEPS, Tutorial } from '../src/game/tutorial.ts';
 
 describe('level format', () => {
@@ -578,5 +587,75 @@ describe('terrain sculpting', () => {
     expect(end).toBeCloseTo(100 + jumpSpacing(2) + jumpSpacing(4), 6);
     const first = out[0] as Extract<Feature, { kind: 'kicker' }>;
     expect(jumpSpacing(2)).toBeGreaterThan(first.gap + first.landingLength);
+  });
+});
+
+describe('backdrops and items', () => {
+  const PIXEL =
+    'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+
+  // A backdrop arrives inside a level someone else built, so this is a trust
+  // boundary, not a formatting nicety.
+  it('accepts inline image data and nothing else', () => {
+    expect(sanitizeBackdrop(defaultBackdrop(PIXEL))?.image).toBe(PIXEL);
+
+    // A remote URL would make every player who rides the level fetch from a
+    // stranger's server the moment they dropped in.
+    expect(sanitizeBackdrop({ image: 'https://example.com/sky.jpg' })).toBeNull();
+    expect(sanitizeBackdrop({ image: '//example.com/sky.jpg' })).toBeNull();
+    // Anything that is not an image is a script-injection vector in a costume.
+    expect(sanitizeBackdrop({ image: 'data:text/html;base64,PHNjcmlwdD4=' })).toBeNull();
+    expect(sanitizeBackdrop({ image: 'data:image/svg+xml;base64,PHN2Zz4=' })).toBeNull();
+    expect(sanitizeBackdrop({ image: 'javascript:alert(1)' })).toBeNull();
+    expect(sanitizeBackdrop({ image: `data:image/png;base64,${'A'.repeat(4_000_000)}` })).toBeNull();
+    expect(sanitizeBackdrop(null)).toBeNull();
+    expect(sanitizeBackdrop('nope')).toBeNull();
+  });
+
+  it('clamps backdrop placement out of a hostile level', () => {
+    const cleaned = sanitizeBackdrop({ image: PIXEL, opacity: 9, rotation: 5000, horizon: -3, scale: 0 });
+    expect(cleaned).not.toBeNull();
+    expect(cleaned!.opacity).toBeLessThanOrEqual(1);
+    expect(Math.abs(cleaned!.rotation)).toBeLessThanOrEqual(180);
+    expect(cleaned!.horizon).toBeGreaterThanOrEqual(0);
+    expect(cleaned!.scale).toBeGreaterThan(0);
+  });
+
+  it('survives a migration that carries a picture', () => {
+    const level = emptyLevel('with picture');
+    level.backdrop = defaultBackdrop(PIXEL);
+    const restored = migrateLevel(JSON.parse(JSON.stringify(level)));
+    expect(restored.backdrop?.image).toBe(PIXEL);
+  });
+
+  it('leaves the picture out of a share code', async () => {
+    const level = emptyLevel('shared');
+    level.backdrop = defaultBackdrop(PIXEL);
+    level.features.push(makeFeature('kicker', 0, 120));
+    const code = await encodeLevelCode(level);
+    const round = await decodeLevelCode(code);
+    // The level travels; the picture does not, because a code carrying one is
+    // far too long to paste.
+    expect(round.features).toHaveLength(1);
+    expect(round.backdrop).toBeNull();
+    // Encoding must not mutate the level still open in the editor.
+    expect(level.backdrop?.image).toBe(PIXEL);
+  });
+
+  it('falls back to a pine for an item kind it does not know', () => {
+    const level = emptyLevel('items');
+    const good = makeFeature('prop', 2, 50) as Extract<Feature, { kind: 'prop' }>;
+    good.prop = 'snowcat';
+    level.features.push(good, { ...good, id: 'x', prop: 'spaceship' } as unknown as Feature);
+    const restored = migrateLevel(JSON.parse(JSON.stringify(level)));
+    const props = restored.features.filter((f): f is Extract<Feature, { kind: 'prop' }> => f.kind === 'prop');
+    expect(props[0].prop).toBe('snowcat');
+    expect(props[1].prop).toBe('pine');
+  });
+
+  it('lists every item kind exactly once', () => {
+    expect(new Set(PROP_KINDS).size).toBe(PROP_KINDS.length);
+    for (const kind of PROP_KINDS) expect(isPropKind(kind)).toBe(true);
+    expect(isPropKind('spaceship')).toBe(false);
   });
 });

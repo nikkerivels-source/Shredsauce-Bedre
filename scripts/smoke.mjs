@@ -164,6 +164,16 @@ try {
   await page.waitForSelector('.editor-panel', { timeout: 15000 });
   console.log('✓ editor opened');
   if (wantShots) await page.screenshot({ path: join(shotDir, 'shot-editor.png') });
+
+  // Item palette and backdrop picker: both are real user paths that a
+  // type-check cannot reach.
+  await page.getByRole('button', { name: 'prop', exact: true }).click();
+  await page.waitForSelector('.item-picker', { timeout: 8000 });
+  const itemCount = await page.locator('.item-picker .btn.tiny').count();
+  if (itemCount < 10) failures.push(`item palette only offered ${itemCount} items`);
+  const hasBackdrop = await page.locator('.editor-backdrop .file-input').count();
+  if (hasBackdrop !== 1) failures.push('backdrop picker missing from the editor');
+  console.log(`✓ item palette (${itemCount} items) and backdrop picker present`);
 } catch (error) {
   failures.push(`flow: ${error.message}`);
 } finally {

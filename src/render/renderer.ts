@@ -17,6 +17,7 @@ import {
   buildProps,
   buildTerrainMesh,
   createSky,
+  setRangeVisibility,
   createSnowMaterial,
   disposeObject,
   refreshTerrainWear,
@@ -213,6 +214,7 @@ export class WorldView {
 
     if (!this.sky) this.sky = createSky(this.scene, level);
     else this.sky.update(level);
+    setRangeVisibility(this.range, level.backdrop);
 
     if (this.snowfall) this.scene.remove(this.snowfall.points);
     this.snowfall = new Snowfall(level);
@@ -229,6 +231,7 @@ export class WorldView {
   refreshWeather(level: LevelDef): void {
     this.level = level;
     this.sky?.update(level);
+    setRangeVisibility(this.range, level.backdrop);
     if (this.snowMaterial) {
       const u = this.snowMaterial.userData.uniforms;
       if (u) {
@@ -373,6 +376,7 @@ export class WorldView {
   }
 
   dispose(): void {
+    this.sky?.dispose();
     this.rider?.dispose();
     this.clearGhosts();
     this.trail.dispose();
