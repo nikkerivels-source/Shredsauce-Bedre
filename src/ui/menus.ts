@@ -17,6 +17,8 @@ import type { LevelDef } from '../world/level.ts';
 import { LevelEditor, type EditorTool } from '../game/editor.ts';
 import { CAMERA_LABELS, CAMERA_MODES, type CameraMode } from '../render/cameras.ts';
 import { button, clear, colorField, el, formatScore, formatTime, segmented, slider, toggle } from './dom.ts';
+import { wordmark } from './wordmark.ts';
+import { runStats, trailMap } from './trailmap.ts';
 
 export type Screen =
   | 'main'
@@ -154,41 +156,51 @@ export class Shell {
     const progress = Math.max(0, Math.min(1, (this.profile.xp - prevAt) / Math.max(1, nextAt - prevAt)));
     const gear = this.profile.discipline === 'skis' ? this.profile.skiId : this.profile.boardId;
 
-    let n = 0;
-    const item = (label: string, note: string, onClick: () => void) => {
-      n += 1;
-      return el('button', { class: 'nav-item', type: 'button', onclick: onClick }, [
-        el('span', { class: 'nav-index' }, [String(n).padStart(2, '0')]),
+    const replays = loadReplays().length;
+
+    // One primary action, then everything else. The old list gave all seven
+    // entries identical weight, which is exactly how a menu ends up reading as
+    // a table of contents instead of a way in.
+    const item = (label: string, note: string, onClick: () => void) =>
+      el('button', { class: 'nav-item', type: 'button', onclick: onClick }, [
         el('span', { class: 'nav-label' }, [label]),
-        el('span', { class: 'nav-note' }, [note]),
+        note ? el('span', { class: 'nav-note' }, [note]) : null,
       ]);
-    };
 
     return el('div', { class: 'screen title-screen' }, [
-      el('div', { class: 'brand' }, [brandMark(), el('h1', { class: 'logo' }, ['BLUEBIRD'])]),
-      el('p', { class: 'tagline' }, ['Alpine freestyle simulation']),
+      el('div', { class: 'brand' }, [
+        wordmark(),
+        el('p', { class: 'tagline' }, ['Alpine freeski simulator']),
+      ]),
       el('nav', { class: 'nav' }, [
-        item('Ride', '7 mountains', () => this.show('ride')),
-        item('Learn', '8 steps', () => this.handlers.onLearn()),
-        item('Sessions', 'Live', () => this.show('multiplayer')),
-        item('Build', 'Editor', () => {
-          const built = generateLevel(Date.now() >>> 0, 'park');
-          built.name = 'New Line';
-          built.author = this.profile.name;
-          this.handlers.onOpenEditor(built);
-        }),
-        item('Garage', getGear(gear).name, () => this.show('gear')),
-        item('Replays', String(loadReplays().length), () => this.show('replays')),
-        item('Settings', '', () => this.show('settings')),
+        el('button', { class: 'nav-hero', type: 'button', onclick: () => this.show('ride') }, [
+          el('span', { class: 'hero-label' }, ['Ride']),
+          el('span', { class: 'hero-note' }, [`${PRESETS.length} mountains · endless seeds`]),
+          el('span', { class: 'hero-arrow', 'aria-hidden': 'true' }, ['→']),
+        ]),
+        el('div', { class: 'nav-rest' }, [
+          item('Learn', 'Eight steps', () => this.handlers.onLearn()),
+          item('Sessions', 'Ride together', () => this.show('multiplayer')),
+          item('Build', 'Level editor', () => {
+            const built = generateLevel(Date.now() >>> 0, 'park');
+            built.name = 'New Line';
+            built.author = this.profile.name;
+            this.handlers.onOpenEditor(built);
+          }),
+          item('Garage', getGear(gear).name, () => this.show('gear')),
+          item('Replays', replays > 0 ? `${replays} saved` : '', () => this.show('replays')),
+          item('Settings', '', () => this.show('settings')),
+        ]),
       ]),
       el('div', { class: 'rider-strip' }, [
-        el('div', {}, [el('span', { class: 'strip-label' }, ['Rider']), el('div', { class: 'strip-value' }, [this.profile.name])]),
-        el('div', {}, [el('span', { class: 'strip-label' }, ['Level']), el('div', { class: 'strip-value' }, [String(level)])]),
-        el('div', {}, [
-          el('span', { class: 'strip-label' }, ['Credits']),
-          el('div', { class: 'strip-value' }, [formatScore(this.profile.credits)]),
+        el('span', { class: 'strip-name' }, [this.profile.name]),
+        el('span', { class: 'strip-sep' }, ['/']),
+        el('span', { class: 'strip-meta' }, [`Level ${level}`]),
+        el('span', { class: 'strip-sep' }, ['/']),
+        el('span', { class: 'strip-meta' }, [`${formatScore(this.profile.credits)} cr`]),
+        el('span', { class: 'xp-bar', title: `${Math.round(progress * 100)}% to level ${level + 1}` }, [
+          el('span', { class: 'xp-fill', style: `width:${(progress * 100).toFixed(1)}%` }),
         ]),
-        el('div', { class: 'xp-bar' }, [el('div', { class: 'xp-fill', style: `width:${(progress * 100).toFixed(1)}%` })]),
       ]),
     ]);
   }
@@ -212,21 +224,35 @@ export class Shell {
       list.append(el('h3', { class: 'list-heading' }, ['Mountains']));
       for (const preset of PRESETS) {
         const best = bestScoreFor(preset.id, this.selectedMode);
+        const level = preset.build();
+        level.id = preset.id;
+        const stats = runStats(level);
         list.append(
           el('button', {
             class: 'level-card',
             type: 'button',
-            onclick: () => {
-              const level = preset.build();
-              level.id = preset.id;
-              this.handlers.onRide(level, this.selectedMode);
-            },
+            onclick: () => this.handlers.onRide(preset.build(), this.selectedMode),
           }, [
-            pisteMark(preset.difficulty),
-            el('div', { class: 'card-text' }, [el('h4', {}, [preset.name]), el('p', {}, [preset.tagline])]),
+            el('div', { class: 'card-map' }, [trailMap(level)]),
+            el('div', { class: 'card-text' }, [
+              el('div', { class: 'card-title' }, [pisteMark(preset.difficulty), el('h4', {}, [preset.name])]),
+              el('p', {}, [preset.tagline]),
+              // One quiet line. A label under every figure means twenty-eight
+              // tracked micro-captions on a seven-row list, which is noise.
+              el('div', { class: 'card-stats' }, [
+                el('span', {}, [`${Math.round(stats.drop)} m vert`]),
+                el('span', {}, [`${(stats.length / 1000).toFixed(1)} km`]),
+                el('span', {}, [`${Math.round(stats.pitch)}° avg`]),
+                el('span', {}, [
+                  stats.gates > 0
+                    ? `${stats.gates} gates`
+                    : `${stats.features} ${stats.features === 1 ? 'feature' : 'features'}`,
+                ]),
+              ]),
+            ]),
             best
-              ? el('div', { class: 'best' }, [el('span', {}, ['Best']), formatScore(best.score)])
-              : el('div', { class: 'best' }, [el('span', {}, ['Best']), '—']),
+              ? el('div', { class: 'best has' }, [el('span', {}, ['Best']), formatScore(best.score)])
+              : el('div', { class: 'best' }, [el('span', {}, ['Best']), 'Unridden']),
           ]),
         );
       }
@@ -578,12 +604,26 @@ export class Shell {
   }
 
   private buildPause(): HTMLElement {
+    // A pause screen that only lists four buttons tells you nothing about the
+    // run you stopped. Show where you are and how it is going.
+    const s = this.lastSummary;
     return el('div', { class: 'screen pause' }, [
-      this.header('Paused'),
-      el('div', { class: 'result-actions column' }, [
+      el('div', { class: 'pause-head' }, [
+        el('span', { class: 'pause-eyebrow' }, ['Paused']),
+        el('h1', {}, [this.lastLevel?.name ?? 'Free ride']),
+      ]),
+      s
+        ? el('div', { class: 'pause-stats' }, [
+            stat(formatTime(s.elapsed), 'Elapsed'),
+            stat(formatScore(s.score), 'Score'),
+            stat(`${Math.round(s.topSpeed * 3.6)} km/h`, 'Top speed'),
+            stat(String(s.tricks.length), 'Tricks'),
+          ])
+        : null,
+      el('div', { class: 'pause-actions' }, [
         button('Resume', () => this.handlers.onResume()),
-        button('Restart run', () => this.handlers.onRestart(), 'btn ghost'),
-        button('Settings', () => this.show('settings'), 'btn ghost'),
+        button('Restart run', () => this.handlers.onRestart(), 'btn link'),
+        button('Settings', () => this.show('settings'), 'btn link'),
         button('Quit to menu', () => this.handlers.onQuitToMenu(), 'btn ghost'),
       ]),
     ]);
@@ -883,20 +923,12 @@ function pisteMark(difficulty: string): HTMLElement {
   );
 }
 
-/** Three ridges. Small enough to work at 34 px, which is where it lives. */
-function brandMark(): SVGSVGElement {
-  const ns = 'http://www.w3.org/2000/svg';
-  const svg = document.createElementNS(ns, 'svg');
-  svg.setAttribute('viewBox', '0 0 32 32');
-  svg.setAttribute('aria-hidden', 'true');
-  const path = document.createElementNS(ns, 'path');
-  path.setAttribute('d', 'M1 26 L11 8 L17 18 L21 11 L31 26 Z');
-  path.setAttribute('fill', '#ffffff');
-  const accent = document.createElementNS(ns, 'path');
-  accent.setAttribute('d', 'M11 8 L17 18 L14 18 Z');
-  accent.setAttribute('fill', '#4d8bff');
-  svg.append(path, accent);
-  return svg;
+/** Figure over label, for the run stats on a level card. */
+function stat(value: string, label: string): HTMLElement {
+  return el('div', { class: 'card-stat' }, [
+    el('span', { class: 'card-stat-value' }, [value]),
+    el('span', { class: 'card-stat-label' }, [label]),
+  ]);
 }
 
 async function copyToClipboard(text: string): Promise<void> {

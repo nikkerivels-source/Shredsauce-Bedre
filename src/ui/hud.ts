@@ -56,7 +56,7 @@ export class Hud {
     this.scoreValue = el('span', { class: 'score-value' }, ['0']);
     this.comboValue = el('span', { class: 'combo' }, ['']);
     this.timerValue = el('span', { class: 'timer-value' }, ['0:00.0']);
-    this.timerLabel = el('span', { class: 'timer-label' }, ['TIME']);
+    this.timerLabel = el('span', { class: 'readout-label' }, ['Time']);
 
     this.gripFill = el('div', { class: 'grip-fill' });
     this.edgeText = el('div', { class: 'edge-text' }, ['0°']);
@@ -99,25 +99,36 @@ export class Hud {
     this.edgeArc.setAttribute('class', 'edge-fill');
     svg.append(track, this.edgeArc);
 
+    // No boxes. Readouts sit directly on the mountain over soft scrims, the way
+    // a broadcast overlay does — a grey rounded rectangle behind every number
+    // is the fastest way to make a game look like a web page.
     this.root = el('div', { class: 'hud' }, [
+      el('div', { class: 'scrim scrim-top' }),
+      el('div', { class: 'scrim scrim-bottom' }),
       el('div', { class: 'hud-top' }, [
-        el('div', { class: 'panel score-panel' }, [
-          el('div', { class: 'panel-label' }, ['SCORE']),
-          this.scoreValue,
-          this.comboValue,
+        el('div', { class: 'readout score-readout' }, [
+          el('div', { class: 'readout-label' }, ['Score']),
+          el('div', { class: 'readout-line' }, [this.scoreValue, this.comboValue]),
         ]),
-        el('div', { class: 'panel timer-panel' }, [this.timerLabel, this.timerValue, this.gateCounter]),
+        el('div', { class: 'readout timer-readout' }, [
+          this.timerLabel,
+          this.timerValue,
+          this.gateCounter,
+        ]),
       ]),
       this.challengeList,
       this.popupHost,
       this.liveTrick,
       this.bailBanner,
       el('div', { class: 'hud-bottom' }, [
-        el('div', { class: 'panel speed-panel' }, [this.speedValue, this.speedUnit]),
-        el('div', { class: 'panel edge-panel' }, [svg, this.edgeText, el('div', { class: 'panel-label' }, ['EDGE'])]),
-        el('div', { class: 'panel grip-panel' }, [
+        el('div', { class: 'speedo' }, [
+          el('div', { class: 'speedo-line' }, [this.speedValue, this.speedUnit]),
           el('div', { class: 'grip-track' }, [this.gripFill]),
-          el('div', { class: 'panel-label' }, ['GRIP']),
+        ]),
+        el('div', { class: 'edge-readout' }, [
+          svg,
+          this.edgeText,
+          el('div', { class: 'readout-label' }, ['Edge']),
         ]),
       ]),
       this.airBadge,
@@ -160,14 +171,14 @@ export class Hud {
     }
 
     if (mode === 'freeride') {
-      this.timerLabel.textContent = 'TIME';
+      this.timerLabel.textContent = 'Time';
       this.timerValue.textContent = formatTime(summary.elapsed);
     } else if (Number.isFinite(timeRemaining)) {
-      this.timerLabel.textContent = 'LEFT';
+      this.timerLabel.textContent = 'Left';
       this.timerValue.textContent = formatTime(timeRemaining);
       this.timerValue.classList.toggle('urgent', timeRemaining < 15);
     } else {
-      this.timerLabel.textContent = 'TIME';
+      this.timerLabel.textContent = 'Time';
       this.timerValue.textContent = formatTime(summary.elapsed);
     }
 

@@ -273,6 +273,9 @@ class App {
     if (this.mode !== 'riding') return;
     this.session.paused = true;
     this.hud.setVisible(false);
+    // Hand the pause screen the run as it stands, so it can show where you are
+    // rather than just offering four buttons.
+    this.shell.setResults(this.session.summary, this.session.level);
     this.shell.show('pause');
   }
 

@@ -68,7 +68,7 @@ body {
 .lbl {
   font-size: 10px;
   line-height: 1;
-  letter-spacing: 0.2em;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
   font-weight: 600;
   color: var(--grey);
@@ -85,15 +85,13 @@ body {
   z-index: 50;
 }
 .boot-logo {
-  font-size: clamp(26px, 6vw, 46px);
-  font-weight: 800;
-  letter-spacing: 0.34em;
-  text-indent: 0.34em;
-  color: var(--snow);
+  width: min(300px, 58vw);
+  height: auto;
+  fill: var(--snow);
 }
 .boot-note {
   color: var(--grey);
-  letter-spacing: 0.24em;
+  letter-spacing: 0.13em;
   font-size: 10px;
   text-transform: uppercase;
   font-weight: 600;
@@ -117,57 +115,71 @@ body {
   inset: 0;
   pointer-events: none;
   z-index: 10;
-  padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right))
-    max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
   color: var(--snow);
+  /* The overlay is lit like the scene: everything gets a soft drop so white
+     type stays legible over white snow without a slab behind it. */
+  text-shadow: 0 1px 3px rgba(6, 12, 20, 0.55), 0 0 18px rgba(6, 12, 20, 0.28);
+}
+
+/* Readability comes from a gradient wash, not from boxes. */
+.scrim {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 26vh;
+  pointer-events: none;
+}
+.scrim-top {
+  top: 0;
+  background: linear-gradient(to bottom, rgba(6, 12, 20, 0.34), rgba(6, 12, 20, 0) 82%);
+}
+.scrim-bottom {
+  bottom: 0;
+  height: 30vh;
+  background: linear-gradient(to top, rgba(6, 12, 20, 0.32), rgba(6, 12, 20, 0) 70%);
 }
 
 .hud-top,
 .hud-bottom {
   position: absolute;
-  left: 16px;
-  right: 16px;
+  left: max(22px, env(safe-area-inset-left));
+  right: max(22px, env(safe-area-inset-right));
   display: flex;
-  gap: 1px;
-  align-items: flex-start;
-}
-.hud-top {
-  top: max(16px, env(safe-area-inset-top));
   justify-content: space-between;
 }
+.hud-top {
+  top: max(18px, env(safe-area-inset-top));
+  align-items: flex-start;
+}
 .hud-bottom {
-  bottom: max(16px, env(safe-area-inset-bottom));
-  align-items: stretch;
+  bottom: max(18px, env(safe-area-inset-bottom));
+  align-items: flex-end;
 }
 
-/* Instrument block: flat, dark, hairline-separated. Reads like a timing board. */
-.panel {
-  background: rgba(10, 15, 20, 0.72);
-  border-radius: var(--r);
-  padding: 9px 13px;
-}
-.panel-label {
-  font-size: 9px;
-  letter-spacing: 0.22em;
-  color: var(--grey-2);
+.readout-label {
+  font-size: 10px;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
   font-weight: 600;
+  color: rgba(255, 255, 255, 0.62);
+  margin-bottom: 3px;
 }
 
-.score-panel {
-  min-width: 128px;
+.readout-line {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
 }
 .score-value {
-  display: block;
   font-family: var(--num);
-  font-size: clamp(21px, 4.4vw, 31px);
+  font-size: clamp(20px, 3.4vw, 28px);
   font-weight: 600;
-  line-height: 1.1;
-  letter-spacing: -0.02em;
+  line-height: 1;
+  letter-spacing: -0.03em;
 }
 .combo {
   font-family: var(--num);
-  font-size: 12px;
+  font-size: 13px;
   color: var(--gold);
   font-weight: 600;
   opacity: 0;
@@ -177,105 +189,57 @@ body {
   opacity: 1;
 }
 
-.timer-panel {
+.timer-readout {
   text-align: right;
-  min-width: 108px;
-}
-.timer-label {
-  display: block;
-  font-size: 9px;
-  letter-spacing: 0.22em;
-  color: var(--grey-2);
-  font-weight: 600;
 }
 .timer-value {
-  font-size: clamp(18px, 3.6vw, 25px);
+  display: block;
+  font-size: clamp(19px, 3vw, 26px);
   font-weight: 600;
   font-family: var(--num);
-  letter-spacing: -0.02em;
+  line-height: 1;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
 }
 .timer-value.urgent {
   color: var(--flag);
 }
 .gates {
-  font-size: 10px;
-  color: var(--grey-2);
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.62);
   font-family: var(--num);
-  margin-top: 2px;
+  margin-top: 5px;
 }
 
 /* The speedo is the one thing allowed to shout. */
-.speed-panel {
+.speedo-line {
   display: flex;
   align-items: baseline;
-  gap: 7px;
-  padding: 10px 16px;
+  gap: 8px;
 }
 .speed-value {
   font-family: var(--num);
-  font-size: clamp(32px, 7.4vw, 54px);
+  font-size: clamp(44px, 8vw, 72px);
   font-weight: 600;
-  line-height: 0.92;
-  letter-spacing: -0.035em;
+  line-height: 0.86;
+  letter-spacing: -0.05em;
 }
 .speed-unit {
-  font-size: 9px;
-  color: var(--grey-2);
-  letter-spacing: 0.2em;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.66);
+  letter-spacing: 0.14em;
   text-transform: uppercase;
   font-weight: 600;
 }
 
-.edge-panel {
-  text-align: center;
-  position: relative;
-  min-width: 92px;
-  display: flex;
-  flex-direction: column;
-  justify-content: flex-end;
-}
-.edge-gauge {
-  width: 78px;
-  height: 46px;
-  display: block;
-  margin: 0 auto;
-}
-.edge-track {
-  fill: none;
-  stroke: rgba(255, 255, 255, 0.16);
-  stroke-width: 5;
-}
-.edge-fill {
-  fill: none;
-  stroke: var(--blue-lt);
-  stroke-width: 5;
-  transition: stroke 0.18s;
-}
-.edge-text {
-  font-family: var(--num);
-  font-size: 15px;
-  font-weight: 600;
-  margin-top: -13px;
-}
-.edge-text.carving {
-  color: var(--green);
-}
-.edge-text.carving + .panel-label {
-  color: var(--green);
-}
-
-.grip-panel {
-  flex: 1;
-  max-width: 240px;
-  display: flex;
-  flex-direction: column;
-  justify-content: flex-end;
-}
+/* Grip lives under the speed as a single hairline. It is a peripheral cue —
+   you feel it go red, you do not read it. */
 .grip-track {
-  height: 4px;
-  background: rgba(255, 255, 255, 0.16);
+  height: 3px;
+  width: min(210px, 34vw);
+  background: rgba(255, 255, 255, 0.22);
   overflow: hidden;
-  margin-bottom: 7px;
+  margin-top: 10px;
 }
 .grip-fill {
   height: 100%;
@@ -289,31 +253,64 @@ body {
   background: var(--flag);
 }
 
+.edge-readout {
+  text-align: center;
+}
+.edge-gauge {
+  width: 84px;
+  height: 49px;
+  display: block;
+  margin: 0 auto;
+  filter: drop-shadow(0 1px 3px rgba(6, 12, 20, 0.5));
+}
+.edge-track {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.24);
+  stroke-width: 4;
+  stroke-linecap: round;
+}
+.edge-fill {
+  fill: none;
+  stroke: var(--blue-lt);
+  stroke-width: 4;
+  stroke-linecap: round;
+  transition: stroke 0.18s;
+}
+.edge-text {
+  font-family: var(--num);
+  font-size: 17px;
+  font-weight: 600;
+  margin-top: -15px;
+}
+.edge-text.carving {
+  color: var(--green);
+}
+.edge-text.carving ~ .readout-label {
+  color: var(--green);
+}
+
 .air-badge {
   position: absolute;
-  top: 40%;
+  top: 38%;
   left: 50%;
   transform: translateX(-50%);
-  background: rgba(10, 15, 20, 0.72);
-  border-radius: var(--r);
-  padding: 6px 14px;
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 600;
   font-family: var(--num);
-  letter-spacing: 0.04em;
+  letter-spacing: 0.02em;
 }
 
 .balance {
   position: absolute;
-  bottom: 21%;
+  bottom: 23%;
   left: 50%;
   transform: translateX(-50%);
   width: min(240px, 56vw);
   text-align: center;
 }
 .balance-track {
-  height: 4px;
-  background: rgba(10, 15, 20, 0.6);
+  height: 3px;
+  background: rgba(255, 255, 255, 0.24);
   position: relative;
   overflow: hidden;
 }
@@ -331,11 +328,12 @@ body {
   background: var(--red);
 }
 .balance-label {
-  font-size: 9px;
-  letter-spacing: 0.22em;
-  color: var(--grey-2);
-  margin-top: 5px;
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  color: rgba(255, 255, 255, 0.62);
+  margin-top: 6px;
   font-weight: 600;
+  text-transform: uppercase;
 }
 
 /* Trick call-outs: a left rule and the number. No card, no gradient. */
@@ -382,7 +380,7 @@ body {
 .popup-quality {
   font-size: 9px;
   color: var(--grey-2);
-  letter-spacing: 0.2em;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
   font-weight: 600;
 }
@@ -435,7 +433,7 @@ body {
 }
 .challenges-title {
   font-size: 9px;
-  letter-spacing: 0.22em;
+  letter-spacing: 0.14em;
   color: var(--grey-2);
   margin-bottom: 9px;
   font-weight: 600;
@@ -482,16 +480,17 @@ body {
 }
 
 /* Coach card: a start-gate instruction board. */
+ /* The one place a backing is earned — a paragraph of text over bright snow.
+   Squared off and edge-lit rather than a floating rounded card. */
 .coach {
   position: absolute;
-  left: 50%;
-  top: 12%;
-  transform: translateX(-50%);
-  width: min(420px, 88vw);
-  background: rgba(10, 15, 20, 0.78);
-  border-radius: var(--r);
+  left: max(22px, env(safe-area-inset-left));
+  top: 14%;
+  width: min(390px, 62vw);
+  background: linear-gradient(90deg, rgba(8, 13, 20, 0.82), rgba(8, 13, 20, 0.62));
+  border-radius: 0;
   border-left: 2px solid var(--blue-lt);
-  padding: 13px 17px 15px;
+  padding: 14px 18px 16px;
   text-align: left;
 }
 .coach.done {
@@ -499,15 +498,15 @@ body {
 }
 .coach-step {
   font-size: 9px;
-  letter-spacing: 0.22em;
+  letter-spacing: 0.14em;
   color: var(--grey-2);
   font-weight: 600;
 }
 .coach-title {
-  font-size: 17px;
+  font-size: 18px;
   font-weight: 700;
-  letter-spacing: 0.02em;
-  margin-top: 4px;
+  letter-spacing: -0.015em;
+  margin-top: 5px;
 }
 .coach-text {
   font-size: 13px;
@@ -611,165 +610,247 @@ body {
 }
 
 .backbar {
-  margin-bottom: 20px;
+  margin-bottom: 22px;
+}
+.backbar .btn {
+  background: none;
+  color: var(--grey-2);
+  padding: 6px 0;
+  box-shadow: none;
+  font-size: 12.5px;
+}
+.backbar .btn::before {
+  content: '\2190\00a0\00a0';
+  color: var(--blue-lt);
+}
+.backbar .btn:hover {
+  background: none;
+  color: var(--snow);
 }
 
 /* --- Title ------------------------------------------------------------- */
+
+/* A short staggered settle on entry. Enough to feel authored, short enough
+   that nobody waiting to ride ever notices it. */
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .title-screen > * {
+    animation: none !important;
+  }
+}
 
 .title-screen {
   display: flex;
   flex-direction: column;
   min-height: calc(100vh - 70px);
   /* Narrow enough that every element stays over the dark side of the scrim. */
-  max-width: 430px;
+  max-width: 460px;
+}
+
+.title-screen > * {
+  animation: rise-in 0.44s cubic-bezier(0.2, 0.8, 0.3, 1) both;
+}
+.title-screen > *:nth-child(2) {
+  animation-delay: 0.07s;
+}
+.title-screen > *:nth-child(3) {
+  animation-delay: 0.13s;
 }
 
 .brand {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  margin-bottom: 6px;
+  margin-bottom: auto;
 }
-.brand svg {
-  width: 34px;
-  height: 34px;
-  flex: none;
-}
-.logo {
-  font-size: clamp(26px, 5vw, 40px);
-  font-weight: 800;
-  letter-spacing: 0.28em;
-  text-indent: 0.28em;
-  margin: 0;
-  line-height: 1;
+.wordmark {
+  display: block;
+  width: min(330px, 62vw);
+  height: auto;
+  fill: var(--snow);
 }
 .tagline {
-  color: var(--grey-2);
-  margin: 0 0 32px;
-  font-size: 11px;
-  letter-spacing: 0.2em;
+  margin: 14px 0 0;
+  font-size: 12px;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
   font-weight: 600;
+  color: var(--grey-2);
 }
 
-/* Vertical nav. No cards, no paragraphs — the label is the whole control. */
 .nav {
-  border-top: 1px solid var(--rule-dark);
-  margin-bottom: 30px;
+  margin: 46px 0 34px;
 }
-.nav-item {
-  display: flex;
-  align-items: baseline;
-  gap: 16px;
+
+/* One hero, then the rest. The weight difference is the navigation. */
+.nav-hero {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
   width: 100%;
+  padding: 0 0 20px;
+  border: 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.18);
   background: none;
-  border: none;
-  border-bottom: 1px solid var(--rule-dark);
-  padding: 15px 4px 15px 0;
   color: var(--snow);
   font: inherit;
   text-align: left;
   cursor: pointer;
+  transition: border-color 0.18s;
+}
+.hero-label {
+  grid-column: 1;
+  font-size: clamp(46px, 9vw, 68px);
+  font-weight: 700;
+  line-height: 0.9;
+  letter-spacing: -0.035em;
+}
+.hero-note {
+  grid-column: 1;
+  margin-top: 8px;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-weight: 600;
+  color: var(--grey-2);
+}
+.hero-arrow {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  font-size: 30px;
+  line-height: 1;
+  color: var(--blue-lt);
+  transform: translateX(-6px);
+  opacity: 0;
+  transition: transform 0.22s cubic-bezier(0.2, 0.8, 0.3, 1), opacity 0.18s;
+}
+.nav-hero:hover,
+.nav-hero:focus-visible {
+  border-bottom-color: var(--blue-lt);
+  outline: none;
+}
+.nav-hero:hover .hero-arrow,
+.nav-hero:focus-visible .hero-arrow {
+  transform: translateX(0);
+  opacity: 1;
+}
+
+.nav-rest {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  column-gap: 26px;
+  row-gap: 2px;
+  margin-top: 22px;
+}
+.nav-item {
   position: relative;
-  transition: padding-left 0.12s ease, color 0.12s;
+  display: block;
+  padding: 9px 0 9px 14px;
+  border: 0;
+  background: none;
+  color: var(--snow);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
 }
 .nav-item::before {
   content: '';
   position: absolute;
   left: 0;
-  top: 0;
-  bottom: 0;
-  width: 0;
-  background: var(--blue);
-  transition: width 0.12s ease;
-}
-.nav-item:hover,
-.nav-item:focus-visible {
-  padding-left: 16px;
-  outline: none;
+  top: 12px;
+  width: 4px;
+  height: 4px;
+  background: var(--blue-lt);
+  opacity: 0;
+  transform: translateX(-4px);
+  transition: opacity 0.16s, transform 0.16s;
 }
 .nav-item:hover::before,
 .nav-item:focus-visible::before {
-  width: 3px;
+  opacity: 1;
+  transform: translateX(0);
 }
-.nav-index {
-  font-family: var(--num);
-  font-size: 11px;
-  color: var(--grey);
-  min-width: 20px;
+.nav-item:focus-visible {
+  outline: none;
 }
 .nav-label {
-  font-size: clamp(19px, 3.2vw, 25px);
-  font-weight: 700;
-  letter-spacing: 0.03em;
-  text-transform: uppercase;
-  flex: 1;
+  display: block;
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  transition: color 0.16s;
+}
+.nav-item:hover .nav-label,
+.nav-item:focus-visible .nav-label {
+  color: var(--blue-lt);
 }
 .nav-note {
-  font-size: 10px;
+  display: block;
+  font-size: 11px;
   color: var(--grey);
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  font-weight: 600;
-  text-shadow: 0 1px 6px rgba(10, 15, 20, 0.9);
+  margin-top: 2px;
+  letter-spacing: 0.02em;
 }
 
-/* Rider data strip, laid out like a start list. */
+/* One line, not a three-cell dashboard. */
 .rider-strip {
   display: flex;
-  gap: 30px;
-  align-items: flex-end;
-  flex-wrap: wrap;
-  margin-top: auto;
-  padding-top: 18px;
-  border-top: 1px solid var(--rule-dark);
+  align-items: center;
+  gap: 10px;
+  padding-top: 16px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  font-size: 12px;
 }
-.strip-label {
-  font-size: 9px;
-  letter-spacing: 0.22em;
-  color: var(--grey);
+.strip-name {
   font-weight: 600;
-  display: block;
-  margin-bottom: 4px;
+  color: var(--snow);
 }
-.strip-value {
-  font-size: 15px;
-  font-weight: 600;
+.strip-sep {
+  color: rgba(255, 255, 255, 0.24);
+}
+.strip-meta {
+  color: var(--grey-2);
   font-family: var(--num);
-  letter-spacing: -0.01em;
 }
 .xp-bar {
   flex: 1;
-  min-width: 120px;
   height: 2px;
-  background: rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.14);
+  margin-left: 6px;
   overflow: hidden;
-  margin-bottom: 5px;
 }
 .xp-fill {
+  display: block;
   height: 100%;
   background: var(--blue-lt);
 }
 
-/* --- Controls ---------------------------------------------------------- */
-
 .btn {
   font: inherit;
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -0.005em;
   color: var(--ink);
   background: var(--snow);
   border: none;
   border-radius: var(--r);
   padding: 11px 20px;
   cursor: pointer;
-  transition: background 0.12s, color 0.12s;
+  transition: background 0.14s, color 0.14s, transform 0.14s;
 }
 .btn:hover {
   background: var(--blue);
   color: var(--snow);
+}
+.btn:active {
+  transform: translateY(1px);
+}
+.btn:focus-visible {
+  outline: 2px solid var(--blue-lt);
+  outline-offset: 2px;
 }
 .btn.ghost {
   background: transparent;
@@ -780,6 +861,17 @@ body {
   background: var(--snow);
   color: var(--ink);
   box-shadow: none;
+}
+.btn.link {
+  background: none;
+  color: var(--grey-2);
+  box-shadow: none;
+  padding: 11px 0;
+  text-align: left;
+}
+.btn.link:hover {
+  background: none;
+  color: var(--snow);
 }
 .btn.danger {
   background: transparent;
@@ -797,42 +889,68 @@ body {
 }
 .btn.tiny {
   padding: 6px 10px;
-  font-size: 9px;
-  background: transparent;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0;
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--grey-2);
+  box-shadow: none;
+}
+.btn.tiny:hover {
+  background: rgba(255, 255, 255, 0.14);
   color: var(--snow);
-  box-shadow: inset 0 0 0 1px var(--rule-dark);
 }
 .btn.tiny.on {
   background: var(--blue);
+  color: var(--snow);
   box-shadow: none;
 }
 
+/* Tabs, not a pill group. The selection is a rule under the live tab — the
+   same device the piste boards use, and it stops one filled blue lozenge from
+   dominating every screen it appears on. */
 .segmented {
   display: inline-flex;
   flex-wrap: wrap;
-  box-shadow: inset 0 0 0 1px var(--rule-dark);
-  border-radius: var(--r);
-  overflow: hidden;
+  gap: 2px;
+  border-bottom: 1px solid var(--rule-dark);
 }
 .seg {
+  position: relative;
   background: transparent;
   color: var(--grey-2);
   border: none;
-  padding: 9px 16px;
+  padding: 9px 15px 11px;
   font: inherit;
   font-weight: 600;
-  font-size: 10px;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
+  font-size: 11px;
+  letter-spacing: 0.04em;
   cursor: pointer;
-  transition: background 0.12s, color 0.12s;
+  transition: color 0.14s;
+}
+.seg::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 2px;
+  background: var(--blue-lt);
+  transform: scaleX(0);
+  transition: transform 0.16s cubic-bezier(0.2, 0.8, 0.3, 1);
 }
 .seg:hover {
   color: var(--snow);
 }
-.seg.on {
-  background: var(--blue);
+.seg:focus-visible {
+  outline: none;
   color: var(--snow);
+}
+.seg.on {
+  color: var(--snow);
+}
+.seg.on::after {
+  transform: scaleX(1);
 }
 
 .row {
@@ -849,46 +967,157 @@ body {
 }
 .field-label {
   font-size: 9px;
-  letter-spacing: 0.22em;
+  letter-spacing: 0.14em;
   color: var(--grey);
   font-weight: 600;
   text-transform: uppercase;
 }
 
+/* Sliders are drawn, not inherited. The control underneath is still a real
+   range input — it just has its own skin. */
 .slider {
   display: grid;
-  grid-template-columns: 150px 1fr 68px;
+  grid-template-columns: 132px 1fr 62px;
   align-items: center;
-  gap: 16px;
-  padding: 9px 0;
+  gap: 14px;
+  padding: 10px 0;
   border-bottom: 1px solid var(--rule-dark);
 }
 .slider-label {
   font-size: 12px;
   color: var(--grey-2);
 }
-.slider input {
+.slider-track {
+  --fill: 0;
+  position: relative;
+  height: 20px;
+  display: flex;
+  align-items: center;
+}
+/* Rail, then the filled portion up to the thumb. */
+.slider-track::before,
+.slider-track::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  height: 2px;
+  pointer-events: none;
+}
+.slider-track::before {
+  right: 0;
+  background: rgba(255, 255, 255, 0.16);
+}
+.slider-track::after {
+  width: calc(var(--fill) * 100%);
+  background: var(--blue-lt);
+}
+.slider-track input {
+  position: relative;
   width: 100%;
-  accent-color: var(--blue-lt);
+  margin: 0;
+  height: 20px;
+  background: none;
+  -webkit-appearance: none;
+  appearance: none;
+  cursor: ew-resize;
+}
+.slider-track input:focus-visible {
+  outline: none;
+}
+.slider-track input::-webkit-slider-runnable-track {
+  height: 20px;
+  background: none;
+}
+.slider-track input::-moz-range-track {
+  height: 20px;
+  background: none;
+}
+.slider-track input::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 3px;
+  height: 14px;
+  border: 0;
+  border-radius: 0;
+  background: var(--snow);
+  box-shadow: 0 0 0 3px rgba(10, 15, 20, 0.9);
+  transition: height 0.14s, background 0.14s;
+}
+.slider-track input::-moz-range-thumb {
+  width: 3px;
+  height: 14px;
+  border: 0;
+  border-radius: 0;
+  background: var(--snow);
+  box-shadow: 0 0 0 3px rgba(10, 15, 20, 0.9);
+}
+.slider-track input:hover::-webkit-slider-thumb,
+.slider-track input:focus-visible::-webkit-slider-thumb {
+  height: 18px;
+  background: var(--blue-lt);
+}
+.slider-track input:hover::-moz-range-thumb,
+.slider-track input:focus-visible::-moz-range-thumb {
+  height: 18px;
+  background: var(--blue-lt);
 }
 .slider-value {
   font-family: var(--num);
   font-size: 11px;
   text-align: right;
   color: var(--snow);
+  font-variant-numeric: tabular-nums;
 }
 
+/* Checkbox as a switch. */
 .toggle {
   display: flex;
-  gap: 10px;
+  gap: 11px;
   align-items: center;
   font-size: 12px;
   color: var(--grey-2);
-  padding: 10px 0;
+  padding: 11px 0;
   border-bottom: 1px solid var(--rule-dark);
+  cursor: pointer;
 }
 .toggle input {
-  accent-color: var(--blue-lt);
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+.toggle-switch {
+  flex: none;
+  position: relative;
+  width: 30px;
+  height: 16px;
+  background: rgba(255, 255, 255, 0.14);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  transition: background 0.16s, border-color 0.16s;
+}
+.toggle-switch::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 10px;
+  height: 10px;
+  background: var(--snow);
+  transition: transform 0.16s cubic-bezier(0.2, 0.8, 0.3, 1);
+}
+.toggle input:checked + .toggle-switch {
+  background: var(--blue);
+  border-color: var(--blue);
+}
+.toggle input:checked + .toggle-switch::after {
+  transform: translateX(14px);
+}
+.toggle input:focus-visible + .toggle-switch {
+  border-color: var(--blue-lt);
+  box-shadow: 0 0 0 2px rgba(77, 139, 255, 0.35);
+}
+.toggle-label {
+  line-height: 1;
 }
 
 .colorfield {
@@ -915,15 +1144,21 @@ body {
   font: inherit;
   font-size: 13px;
   color: var(--snow);
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid var(--rule-dark);
-  border-radius: var(--r);
-  padding: 11px 13px;
+  background: none;
+  border: 0;
+  border-bottom: 1px solid var(--rule-dark);
+  border-radius: 0;
+  padding: 10px 2px;
   min-width: 190px;
   flex: 1;
+  transition: border-color 0.16s;
 }
 .code-input::placeholder {
   color: var(--grey);
+}
+.code-input:focus {
+  outline: none;
+  border-bottom-color: var(--blue-lt);
 }
 
 .import-row,
@@ -937,7 +1172,7 @@ body {
 
 .list-heading {
   font-size: 9px;
-  letter-spacing: 0.22em;
+  letter-spacing: 0.14em;
   color: var(--grey);
   text-transform: uppercase;
   font-weight: 600;
@@ -954,19 +1189,19 @@ body {
 
 .level-card {
   display: flex;
-  align-items: center;
+  align-items: stretch;
   gap: 18px;
   width: 100%;
   background: none;
   border: none;
   border-bottom: 1px solid var(--rule-dark);
-  padding: 15px 4px 15px 0;
+  padding: 16px 4px 16px 0;
   text-align: left;
   color: var(--snow);
   font: inherit;
   cursor: pointer;
   position: relative;
-  transition: padding-left 0.12s ease;
+  transition: padding-left 0.16s ease, background 0.16s ease;
 }
 .level-card::before {
   content: '';
@@ -976,10 +1211,11 @@ body {
   bottom: 0;
   width: 0;
   background: var(--blue);
-  transition: width 0.12s ease;
+  transition: width 0.16s ease;
 }
 .level-card:hover {
   padding-left: 14px;
+  background: rgba(255, 255, 255, 0.03);
 }
 .level-card:hover::before {
   width: 3px;
@@ -987,45 +1223,149 @@ body {
 .level-card.saved {
   cursor: default;
   flex-wrap: wrap;
+  align-items: center;
 }
 .level-card.saved:hover {
   padding-left: 0;
+  background: none;
 }
 .level-card.saved:hover::before {
   width: 0;
 }
+
+/* The trail map. Drawn from the level's own features, so it is a preview of
+   the run rather than an illustration of one. */
+.card-map {
+  flex: none;
+  width: 68px;
+  align-self: center;
+}
+.trailmap {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.tm-piste {
+  fill: rgba(255, 255, 255, 0.1);
+  stroke: rgba(255, 255, 255, 0.16);
+  stroke-width: 0.7;
+}
+.tm-contours path {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.13);
+  stroke-width: 0.6;
+}
+.tm-scatter circle {
+  fill: rgba(116, 186, 146, 0.55);
+}
+.tm-kicker {
+  fill: var(--snow);
+}
+.tm-hip {
+  fill: rgba(255, 255, 255, 0.85);
+}
+.tm-rail,
+.tm-box {
+  fill: var(--blue-lt);
+}
+.tm-pipe,
+.tm-roller {
+  fill: rgba(255, 255, 255, 0.4);
+}
+.tm-qp {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.66);
+  stroke-width: 1.6;
+}
+.tm-course {
+  fill: none;
+  stroke: var(--flag);
+  stroke-width: 0.8;
+  stroke-dasharray: 2 2;
+}
+.tm-start {
+  fill: var(--flag);
+}
+.level-card:hover .tm-piste {
+  fill: rgba(255, 255, 255, 0.15);
+  stroke: rgba(255, 255, 255, 0.3);
+}
+
 .card-text {
   flex: 1;
   min-width: 0;
 }
+.card-title {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
 .level-card h4 {
   margin: 0;
-  font-size: 16px;
+  font-size: 17px;
   font-weight: 700;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
+  letter-spacing: -0.01em;
 }
 .level-card p {
-  margin: 3px 0 0;
+  margin: 4px 0 0;
   color: var(--grey-2);
   font-size: 12.5px;
-  line-height: 1.4;
+  line-height: 1.45;
 }
+
+/* Real measurements off the level, set as one line of separated figures. */
+.card-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 10px;
+  margin-top: 9px;
+  font-family: var(--num);
+  font-size: 11.5px;
+  color: var(--grey);
+}
+.card-stats span + span::before {
+  content: '\00b7';
+  margin-right: 10px;
+  color: rgba(255, 255, 255, 0.2);
+}
+.card-stat-value {
+  display: block;
+  font-family: var(--num);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+.card-stat-label {
+  display: block;
+  font-size: 9px;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--grey);
+  margin-top: 3px;
+  font-weight: 600;
+}
+
 .best {
   font-family: var(--num);
-  font-size: 11px;
-  color: var(--gold);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--grey);
   white-space: nowrap;
   text-align: right;
+  align-self: center;
+}
+.best.has {
+  color: var(--gold);
 }
 .best span {
   display: block;
   font-family: var(--font);
   font-size: 9px;
-  letter-spacing: 0.2em;
+  letter-spacing: 0.13em;
   color: var(--grey);
   text-transform: uppercase;
-  margin-bottom: 3px;
+  margin-bottom: 4px;
+  font-weight: 600;
 }
 .card-actions {
   display: flex;
@@ -1113,7 +1453,7 @@ body {
 }
 .gear-brand {
   font-size: 9px;
-  letter-spacing: 0.2em;
+  letter-spacing: 0.14em;
   color: var(--grey);
   text-transform: uppercase;
   font-weight: 600;
@@ -1154,7 +1494,7 @@ body {
 .locked-note,
 .equipped-note {
   font-size: 9px;
-  letter-spacing: 0.2em;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--grey);
   font-weight: 600;
@@ -1175,7 +1515,7 @@ body {
 .trick-log h3 {
   margin: 0 0 4px;
   font-size: 9px;
-  letter-spacing: 0.22em;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--grey);
   font-weight: 600;
@@ -1201,7 +1541,7 @@ body {
   color: var(--grey);
   font-weight: 600;
   font-size: 9px;
-  letter-spacing: 0.2em;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
   padding-bottom: 9px;
   border-bottom: 1px solid var(--rule-dark);
@@ -1258,9 +1598,57 @@ body {
   max-width: 260px;
   align-items: stretch;
 }
+/* Pause shows the run you stopped, not just four buttons. */
 .pause {
-  padding-top: 8vh;
-  max-width: 320px;
+  padding-top: 10vh;
+  max-width: 380px;
+}
+.pause-head {
+  margin-bottom: 26px;
+}
+.pause-eyebrow {
+  display: block;
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  font-weight: 600;
+  color: var(--blue-lt);
+  margin-bottom: 8px;
+}
+.pause-head h1 {
+  margin: 0;
+  font-size: clamp(28px, 5vw, 40px);
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  line-height: 1;
+}
+.pause-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px 24px;
+  padding: 18px 0;
+  border-top: 1px solid var(--rule-dark);
+  border-bottom: 1px solid var(--rule-dark);
+}
+.pause-stats .card-stat-value {
+  font-size: 19px;
+}
+.result-actions.column {
+  margin-top: 24px;
+}
+
+/* Primary action carries weight; the rest are links under it. Four identical
+   stacked bars make every choice look equally consequential. */
+.pause-actions {
+  margin-top: 26px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+.pause-actions .btn:first-child {
+  align-self: stretch;
+  margin-bottom: 12px;
 }
 
 .roster-row {
@@ -1271,7 +1659,7 @@ body {
 }
 .status-line {
   font-size: 9px;
-  letter-spacing: 0.2em;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--grey);
   font-weight: 600;
@@ -1306,9 +1694,9 @@ body {
 }
 .editor-tools .seg {
   flex: 1;
-  padding: 9px 3px;
-  font-size: 9px;
-  letter-spacing: 0.1em;
+  padding: 9px 2px 11px;
+  font-size: 11px;
+  letter-spacing: 0;
 }
 .editor-kinds .field-label {
   display: block;
@@ -1330,7 +1718,7 @@ body {
 .props h3 {
   margin: 0 0 4px;
   font-size: 9px;
-  letter-spacing: 0.22em;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--grey);
   font-weight: 600;
@@ -1338,12 +1726,15 @@ body {
   border-bottom: 1px solid var(--rule-dark);
 }
 .editor-foot {
+  position: sticky;
+  bottom: 0;
   display: flex;
   gap: 5px;
   flex-wrap: wrap;
   border-top: 1px solid var(--rule-dark);
-  padding-top: 16px;
+  padding: 14px 0 2px;
   margin-top: auto;
+  background: rgba(10, 15, 20, 0.94);
 }
 
 /* --- Toasts ------------------------------------------------------------ */
@@ -1365,7 +1756,7 @@ body {
   padding: 9px 16px;
   font-size: 10px;
   font-weight: 700;
-  letter-spacing: 0.16em;
+  letter-spacing: 0.13em;
   text-transform: uppercase;
   opacity: 1;
   transition: opacity 0.45s;

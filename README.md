@@ -170,12 +170,39 @@ corduroy, conifers that read as black silhouettes against it, poured-concrete
 park features, and a continuous ridged mountain range closing the horizon in
 layers that fade into haze.
 
-**The interface** takes its language from alpine race signage — piste maps,
-start-gate timing boards, bib numbers. High contrast, hairline rules, near-square
-corners, tabular figures, and micro-labels in tracked uppercase. Runs are listed
-on a board with the difficulty marks every resort already uses: green circle,
-blue square, black diamond, double diamond. No card carries a paragraph
-explaining what its button does; the label is the control.
+**The interface** is drawn rather than assembled from defaults.
+
+The wordmark is a set of hand-built outlines — 100-unit cap height, 22-unit
+stems, 17-unit horizontals, because horizontals have to be lighter than stems
+optically — sprung as elliptical half-arcs straight off the stem and fitted
+tight. The same outlines are inlined into `index.html` so the brand is right on
+the first painted frame, before a single module loads. There is no `letter-spacing`
+on a system font anywhere near it.
+
+Every control is skinned. Sliders and switches are still real `input` elements —
+keyboard, screen reader and touch behaviour all come free — but the OS track and
+thumb are hidden and the control reports its own fill fraction to CSS. A stock
+range widget in a level editor is the clearest possible sign that nobody
+designed the panel.
+
+The in-run overlay has no boxes. Readouts sit on the mountain over soft
+gradient scrims with the drop shadow doing the legibility work, the way a
+broadcast overlay does. Speed is the one thing allowed to shout; grip is a
+hairline under it that you feel go red rather than read.
+
+Screens are weighted, not gridded. The title gives Ride a 68 px setting and
+everything else 17 px, because seven identically weighted entries make a menu
+read as a table of contents. Runs are listed with the difficulty marks every
+resort uses — green circle, blue square, black diamond, double diamond — and no
+card carries a paragraph explaining what its button does.
+
+**Trail maps** are the part that could not be faked. Each run in the browser
+draws a plan view from the level's own feature list — the same coordinates the
+sim rides, so a kicker moved in the editor moves on the map. Contours sit at a
+50 m vertical interval with their spacing derived from the run's pitch, which is
+what a real piste map does and why a steep face stacks them closer. The figures
+beside it — vertical drop, length, average pitch, feature count — are computed
+from the level, not written down.
 
 The menus render over the live mountain, and the title screen drifts through a
 limited arc behind the start gate so the run, the rider and the skyline are

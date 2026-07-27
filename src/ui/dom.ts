@@ -48,10 +48,18 @@ export interface SliderOptions {
   onInput: (v: number) => void;
 }
 
+/**
+ * A slider that is still a real `input[type=range]` — keyboard, screen reader
+ * and touch behaviour all come for free — but reports its own fill fraction on
+ * `--fill` so the track can be drawn instead of inherited from the OS. The
+ * native thumb and track are hidden in CSS; a stock range control is the single
+ * most obvious sign that nobody styled a panel.
+ */
 export function slider(label: string, opts: SliderOptions): HTMLElement {
   const readout = el('span', { class: 'slider-value' }, [
     opts.format ? opts.format(opts.value) : opts.value.toFixed(2),
   ]);
+  const fraction = (v: number) => (v - opts.min) / Math.max(1e-6, opts.max - opts.min);
   const input = el('input', {
     type: 'range',
     min: opts.min,
@@ -61,19 +69,31 @@ export function slider(label: string, opts: SliderOptions): HTMLElement {
     oninput: (e: Event) => {
       const v = Number((e.target as HTMLInputElement).value);
       readout.textContent = opts.format ? opts.format(v) : v.toFixed(2);
+      track.style.setProperty('--fill', fraction(v).toFixed(4));
       opts.onInput(v);
     },
   });
-  return el('label', { class: 'slider' }, [el('span', { class: 'slider-label' }, [label]), input, readout]);
+  const track = el('div', { class: 'slider-track' }, [input]);
+  track.style.setProperty('--fill', fraction(opts.value).toFixed(4));
+  return el('label', { class: 'slider' }, [
+    el('span', { class: 'slider-label' }, [label]),
+    track,
+    readout,
+  ]);
 }
 
+/** Checkbox drawn as a switch. Same reasoning as the slider. */
 export function toggle(label: string, value: boolean, onChange: (v: boolean) => void): HTMLElement {
   const input = el('input', {
     type: 'checkbox',
     checked: value,
     onchange: (e: Event) => onChange((e.target as HTMLInputElement).checked),
   });
-  return el('label', { class: 'toggle' }, [input, el('span', {}, [label])]);
+  return el('label', { class: 'toggle' }, [
+    input,
+    el('span', { class: 'toggle-switch', 'aria-hidden': 'true' }),
+    el('span', { class: 'toggle-label' }, [label]),
+  ]);
 }
 
 export function segmented<T extends string>(

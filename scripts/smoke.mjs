@@ -59,7 +59,7 @@ page.on('pageerror', (err) => failures.push(`pageerror: ${err.message}`));
 
 try {
   await page.goto(base, { waitUntil: 'networkidle' });
-  await page.waitForSelector('.logo', { timeout: 20000 });
+  await page.waitForSelector('.wordmark', { timeout: 20000 });
   console.log('✓ menu rendered');
   if (wantShots) await page.screenshot({ path: join(shotDir, 'shot-menu.png') });
 
@@ -126,7 +126,7 @@ try {
   if (wantShots) await page.screenshot({ path: join(shotDir, 'shot-pause.png') });
 
   await page.getByRole('button', { name: 'Quit to menu' }).click();
-  await page.waitForSelector('.logo', { timeout: 8000 });
+  await page.waitForSelector('.wordmark', { timeout: 8000 });
   console.log('✓ returned to menu');
 
   // Tutorial: the coach panel must appear and be on step one.
@@ -152,7 +152,7 @@ try {
   await page.keyboard.press('Escape');
   await page.waitForSelector('.pause', { timeout: 8000 });
   await page.getByRole('button', { name: 'Quit to menu' }).click();
-  await page.waitForSelector('.logo', { timeout: 8000 });
+  await page.waitForSelector('.wordmark', { timeout: 8000 });
 
   // Editor.
   await page.getByRole('button', { name: 'Build', exact: false }).first().click();
