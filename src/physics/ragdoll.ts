@@ -177,7 +177,9 @@ export function poseFromRider(
   const stance = 0.26;
   const leadSign = opts.goofy ? -1 : 1;
   const footFwd = sim.gear.discipline === 'snowboard' ? stance : 0;
-  const footSide = sim.gear.discipline === 'snowboard' ? 0 : 0.11;
+  // Skis run a wider stance than the old 0.22 m — a modern freeski stance is
+  // around 27 cm between centres, and it reads as one from behind.
+  const footSide = sim.gear.discipline === 'snowboard' ? 0 : 0.135;
 
   const boardAt = (out: Vec3, along: number, across: number) =>
     out

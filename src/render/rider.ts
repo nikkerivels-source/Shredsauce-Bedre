@@ -45,20 +45,23 @@ interface LimbSpec {
  * makes a rider read as a generic mannequin instead of a skier.
  */
 const LIMBS: LimbSpec[] = [
-  { a: J.pelvis, b: J.chest, from: 0.2, to: 0.215, key: 'jacket', flatten: 0.8 },
-  { a: J.chest, b: J.neck, from: 0.16, to: 0.093, key: 'jacket' },
-  { a: J.chest, b: J.shoulderL, from: 0.115, to: 0.1, key: 'jacket' },
-  { a: J.chest, b: J.shoulderR, from: 0.115, to: 0.1, key: 'jacket' },
-  { a: J.shoulderL, b: J.elbowL, from: 0.093, to: 0.075, key: 'jacket' },
-  { a: J.shoulderR, b: J.elbowR, from: 0.093, to: 0.075, key: 'jacket' },
-  { a: J.elbowL, b: J.handL, from: 0.072, to: 0.055, key: 'jacket' },
-  { a: J.elbowR, b: J.handR, from: 0.072, to: 0.055, key: 'jacket' },
-  { a: J.pelvis, b: J.hipL, from: 0.13, to: 0.125, key: 'pants' },
-  { a: J.pelvis, b: J.hipR, from: 0.13, to: 0.125, key: 'pants' },
-  { a: J.hipL, b: J.kneeL, from: 0.128, to: 0.112, key: 'pants' },
-  { a: J.hipR, b: J.kneeR, from: 0.128, to: 0.112, key: 'pants' },
-  { a: J.kneeL, b: J.footL, from: 0.112, to: 0.104, key: 'pants' },
-  { a: J.kneeR, b: J.footR, from: 0.112, to: 0.104, key: 'pants' },
+  { a: J.pelvis, b: J.chest, from: 0.215, to: 0.222, key: 'jacket', flatten: 0.7 },
+  { a: J.chest, b: J.neck, from: 0.19, to: 0.093, key: 'jacket', flatten: 0.74 },
+  { a: J.chest, b: J.shoulderL, from: 0.145, to: 0.12, key: 'jacket', flatten: 0.82 },
+  { a: J.chest, b: J.shoulderR, from: 0.145, to: 0.12, key: 'jacket', flatten: 0.82 },
+  // Sleeves nearly as thick as the shoulder they hang off. In the reference the
+  // arms barely separate from the body — the shell reads as one broad mass and
+  // only the gloves tell you where the arms end.
+  { a: J.shoulderL, b: J.elbowL, from: 0.12, to: 0.104, key: 'jacket' },
+  { a: J.shoulderR, b: J.elbowR, from: 0.12, to: 0.104, key: 'jacket' },
+  { a: J.elbowL, b: J.handL, from: 0.1, to: 0.072, key: 'jacket' },
+  { a: J.elbowR, b: J.handR, from: 0.1, to: 0.072, key: 'jacket' },
+  { a: J.pelvis, b: J.hipL, from: 0.14, to: 0.135, key: 'pants' },
+  { a: J.pelvis, b: J.hipR, from: 0.14, to: 0.135, key: 'pants' },
+  { a: J.hipL, b: J.kneeL, from: 0.142, to: 0.126, key: 'pants' },
+  { a: J.hipR, b: J.kneeR, from: 0.142, to: 0.126, key: 'pants' },
+  { a: J.kneeL, b: J.footL, from: 0.126, to: 0.115, key: 'pants' },
+  { a: J.kneeR, b: J.footR, from: 0.126, to: 0.115, key: 'pants' },
 ];
 
 /**
@@ -72,8 +75,9 @@ const LIMBS: LimbSpec[] = [
 export class RiderMesh {
   readonly group = new THREE.Group();
   private limbs: THREE.Mesh[] = [];
-  private jointCaps: Array<{ mesh: THREE.Mesh; joint: number; radius: number }> = [];
+  private jointCaps: Array<{ mesh: THREE.Mesh; joint: number; radius: number; flatten: number }> = [];
   private hem: THREE.Mesh;
+  private hood: THREE.Mesh;
   private head: THREE.Mesh;
   private goggles: THREE.Mesh;
   private gloves: THREE.Mesh[] = [];
@@ -120,20 +124,29 @@ export class RiderMesh {
       this.group.add(mesh);
     }
 
-    const jointGeo = new THREE.SphereGeometry(1, 8, 6);
+    const jointGeo = new THREE.SphereGeometry(1, 10, 7);
     for (const limb of LIMBS) {
       const cap = new THREE.Mesh(jointGeo, mat(limb.key));
-      this.jointCaps.push({ mesh: cap, joint: limb.b, radius: limb.to });
+      this.jointCaps.push({ mesh: cap, joint: limb.b, radius: limb.to, flatten: limb.flatten ?? 1 });
       this.group.add(cap);
     }
 
-    // Jacket hem: a flared skirt hanging past the hips. This one piece does more
-    // for the freeski silhouette than any amount of limb thickening.
-    this.hem = new THREE.Mesh(new THREE.CylinderGeometry(0.215, 0.25, 0.3, 12, 1, true), mat('jacket'));
+    // Jacket hem: a flared skirt hanging to mid-thigh. This one piece does more
+    // for the freeski silhouette than any amount of limb thickening — a shell
+    // that stops at the hips reads as a jacket, one that hangs past them reads
+    // as freeski outerwear, and the difference is most of the character.
+    this.hem = new THREE.Mesh(new THREE.CylinderGeometry(0.252, 0.295, HEM_LENGTH, 16, 1, true), mat('jacket'));
     this.hem.castShadow = !ghost;
     this.group.add(this.hem);
 
-    this.head = new THREE.Mesh(new THREE.SphereGeometry(0.135, 16, 12), mat('helmet'));
+    // Hood, bunched at the back of the neck. Reads as a lump on the shoulders
+    // from behind, which is the angle the player sees almost all of the time.
+    this.hood = new THREE.Mesh(new THREE.SphereGeometry(0.1, 12, 9), mat('jacket'));
+    this.hood.scale.set(1.3, 0.66, 0.78);
+    this.hood.castShadow = !ghost;
+    this.group.add(this.hood);
+
+    this.head = new THREE.Mesh(new THREE.SphereGeometry(0.126, 16, 12), mat('helmet'));
     this.head.scale.set(1, 1.06, 0.95);
     this.head.castShadow = !ghost;
     this.group.add(this.head);
@@ -152,8 +165,11 @@ export class RiderMesh {
       this.group.add(glove);
     }
 
-    // Ski boots are big rigid plastic shells, not shoes.
-    const bootGeo = new THREE.BoxGeometry(0.145, 0.17, 0.3);
+    // Ski boots are big rigid plastic shells, not shoes, and a freeski cuff
+    // comes well up the shin — the dark mass below the knee in the reference is
+    // boot, not leg.
+    const bootGeo = new THREE.BoxGeometry(0.15, 0.28, 0.3);
+    bootGeo.translate(0, 0.055, 0);
     for (let i = 0; i < 2; i++) {
       const boot = new THREE.Mesh(bootGeo, mat('goggles', { roughness: 0.42, metalness: 0.08 }));
       boot.castShadow = !ghost;
@@ -195,28 +211,40 @@ export class RiderMesh {
     if (!skis) return;
     for (let i = 0; i < 2; i++) {
       const pole = new THREE.Group();
+      // Bare alloy, not a dark stick. A pole read against snow is a bright
+      // highlight with a dark grip at the top — drawing it in the helmet colour
+      // made it vanish into a thin scratch.
       const shaft = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.0085, 0.0065, 1.18, 6),
-        this.mat('helmet', { roughness: 0.3, metalness: 0.75 }),
+        new THREE.CylinderGeometry(0.0115, 0.0085, 1.18, 7),
+        poleMaterial(this.ghost),
       );
       shaft.position.y = -0.59;
       shaft.castShadow = !this.ghost;
 
+      // Grip takes the pants colour, so the rider's kit reads as a set.
       const grip = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.017, 0.014, 0.14, 8),
+        new THREE.CylinderGeometry(0.021, 0.017, 0.155, 8),
+        this.mat('pants', { roughness: 0.95, metalness: 0 }),
+      );
+      grip.position.y = -0.06;
+
+      const strap = new THREE.Mesh(
+        new THREE.TorusGeometry(0.035, 0.006, 5, 10),
         this.mat('goggles', { roughness: 0.9, metalness: 0 }),
       );
-      grip.position.y = -0.05;
+      strap.rotation.x = Math.PI / 2;
+      strap.rotation.z = 0.5;
+      strap.position.y = -0.015;
 
       // The basket sits just above the tip and stops the pole punching through
       // soft snow — it is the detail that makes a pole read as a ski pole.
       const basket = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.043, 0.043, 0.012, 10),
-        this.mat('board', { roughness: 0.8, metalness: 0 }),
+        new THREE.CylinderGeometry(0.052, 0.052, 0.014, 10),
+        this.mat('goggles', { roughness: 0.85, metalness: 0 }),
       );
-      basket.position.y = -1.05;
+      basket.position.y = -1.04;
 
-      pole.add(shaft, grip, basket);
+      pole.add(shaft, grip, strap, basket);
       this.poles.push(pole);
       this.group.add(pole);
     }
@@ -266,12 +294,6 @@ export class RiderMesh {
       mesh.scale.set(mid, length, mid * (limb.flatten ?? 1));
     }
 
-    for (const cap of this.jointCaps) {
-      const p = joints[cap.joint];
-      cap.mesh.position.set(p.x, p.y, p.z);
-      cap.mesh.scale.setScalar(cap.radius);
-    }
-
     // Body frame, from the spine.
     _pelvis.set(joints[J.pelvis].x, joints[J.pelvis].y, joints[J.pelvis].z);
     _chest.set(joints[J.chest].x, joints[J.chest].y, joints[J.chest].z);
@@ -283,13 +305,38 @@ export class RiderMesh {
     _m.makeBasis(_side, _boardUp, _fwd);
     _boardQuat.setFromRotationMatrix(_m);
 
-    // Hem hangs off the pelvis, along the spine.
-    this.hem.position.copy(_pelvis).addScaledVector(_up, -0.02);
-    this.hem.quaternion.setFromUnitVectors(UP, _up);
+    // Joint caps close the open ends of the limb tubes. They take the limb's
+    // flatten in the body's fore-aft axis, so a torso ends up a slab rather
+    // than a beach ball — an unflattened cap at the chest is wide enough to
+    // swallow the neck, the hood and most of the shoulders.
+    for (const cap of this.jointCaps) {
+      const p = joints[cap.joint];
+      cap.mesh.position.set(p.x, p.y, p.z);
+      cap.mesh.quaternion.copy(_boardQuat);
+      cap.mesh.scale.set(cap.radius, cap.radius, cap.radius * cap.flatten);
+    }
+
+    // Hem hangs off the pelvis along the spine, its centre half a length below
+    // the waist so the skirt covers the hips and upper thigh. It is an ellipse,
+    // not a tube: wide enough side-to-side to cover a splayed stance, shallow
+    // enough front-to-back not to balloon.
+    this.hem.position.copy(_pelvis).addScaledVector(_up, 0.05 - HEM_LENGTH * 0.5);
+    _right.crossVectors(_up, _fwd).normalize();
+    _lookDir.crossVectors(_right, _up).normalize();
+    _m.makeBasis(_right, _up, _lookDir);
+    this.hem.quaternion.setFromRotationMatrix(_m);
+    this.hem.scale.set(1, 1, HEM_FLATTEN);
 
     const head = joints[J.head];
     const neck = joints[J.neck];
     this.head.position.set(head.x, head.y, head.z);
+
+    // Hood sits behind and just below the neck, bunched against the shoulders.
+    this.hood.position
+      .set(neck.x, neck.y, neck.z)
+      .addScaledVector(_up, -0.03)
+      .addScaledVector(_fwd, -0.1);
+    this.hood.quaternion.copy(_boardQuat);
 
     _headUp.set(head.x - neck.x, head.y - neck.y, head.z - neck.z).normalize();
     // A skier looks along the skis; a snowboarder looks across the board.
@@ -428,6 +475,33 @@ const _poleFrom = new THREE.Vector3();
 const _poleTo = new THREE.Vector3();
 /** Height of the pole group as modelled, from grip to tip. */
 const POLE_MODEL_LENGTH = 1.1;
+
+/** Hem drop from the pelvis. Long enough to reach mid-thigh. */
+const HEM_LENGTH = 0.42;
+/** Hem depth as a fraction of its width. A person is not a cylinder. */
+const HEM_FLATTEN = 0.72;
+
+/**
+ * Pole shafts are shared, unpainted alloy — they are equipment, not kit, so
+ * they sit outside the appearance palette and every rider's poles match.
+ */
+let _poleMat: THREE.MeshStandardMaterial | null = null;
+let _poleMatGhost: THREE.MeshStandardMaterial | null = null;
+function poleMaterial(ghost: boolean): THREE.MeshStandardMaterial {
+  if (ghost) {
+    _poleMatGhost ??= new THREE.MeshStandardMaterial({
+      color: 0xc9d4de,
+      roughness: 0.34,
+      metalness: 0.72,
+      transparent: true,
+      opacity: 0.42,
+      depthWrite: false,
+    });
+    return _poleMatGhost;
+  }
+  _poleMat ??= new THREE.MeshStandardMaterial({ color: 0xc9d4de, roughness: 0.34, metalness: 0.72 });
+  return _poleMat;
+}
 const _m = new THREE.Matrix4();
 const _boardQuat = new THREE.Quaternion();
 const UP = new THREE.Vector3(0, 1, 0);

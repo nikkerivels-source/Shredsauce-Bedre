@@ -58,7 +58,12 @@ page.on('console', (msg) => {
 page.on('pageerror', (err) => failures.push(`pageerror: ${err.message}`));
 
 try {
-  await page.goto(base, { waitUntil: 'networkidle' });
+  // Cache-bust the entry document. This server binds a random port, so today
+  // every run is a fresh origin and cannot hit a stale entry — but Chromium's
+  // disk cache does survive between launches, and against a fixed-port server
+  // that is enough to validate the *previous* build's bundle and report a pass
+  // for code that was never loaded. Cheap insurance against pinning the port.
+  await page.goto(`${base}?smoke=${Date.now()}`, { waitUntil: 'networkidle' });
   await page.waitForSelector('.wordmark', { timeout: 20000 });
   console.log('✓ menu rendered');
   if (wantShots) await page.screenshot({ path: join(shotDir, 'shot-menu.png') });

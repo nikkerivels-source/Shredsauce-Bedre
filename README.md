@@ -161,9 +161,18 @@ and spin you were carrying. A crash out of a corked 900 keeps tumbling like one.
 ### Look
 
 **The rider** is a freeskier: two skis with their own sidecut and twin-tip
-rocker, poles with grips and baskets held at the hands and trailed back, an
-oversized shell whose hem hangs past the hips, and rigid boot shells. The
-outerwear is deliberately baggy — those radii are the clothing, not the body.
+rocker, alloy poles with coloured grips and baskets held at the hands and
+trailed back, an oversized shell whose hem hangs to mid-thigh over a hood
+bunched at the neck, and boot shells that come well up the shin. The outerwear
+is deliberately baggy — those radii are the clothing, not the body, and the
+sleeves are nearly as thick as the shoulders they hang off, so the shell reads
+as one broad mass with only the gloves telling you where the arms end.
+
+Limbs are tapered tubes between joints, and the caps that close them are
+squashed fore-and-aft by the same factor as the tube. That detail matters more
+than it sounds: an unflattened cap at the chest is a half-metre sphere that
+swallows the neck, the hood and most of the shoulders, and turns a skier into a
+snowman.
 
 **The world** is bright and low-poly on purpose: near-white snow with groomer
 corduroy, conifers that read as black silhouettes against it, poured-concrete
