@@ -493,7 +493,7 @@ export class Shell {
         ]),
         el('p', { class: 'help' }, [
           'Keyboard: A/D lean · W/S weight · Q/E wind up rotation · Space load and pop · ' +
-            'Shift tuck · Z X C V F G grabs · R reset · T camera · P photo.',
+            'F plant a pole · Shift tuck · Z X C V G H grabs · R reset · T camera · P photo.',
         ]),
       ]),
       el('div', { class: 'settings-block' }, [

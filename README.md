@@ -18,7 +18,7 @@ npm run server       # optional: live sessions on ws://localhost:8787
 ```
 
 ```bash
-npm test             # 49 unit tests (physics, tricks, editor, replays)
+npm test             # 55 unit tests (physics, tricks, editor, replays)
 npm run build        # typecheck + production bundle into dist/
 node scripts/smoke.mjs --shots   # drives the built game in a real browser
 ```
@@ -99,6 +99,26 @@ peak leg force the leg spring actually recorded. A clean carve sings; break it
 loose and the same layer widens into a roar. No amount of crossfading between
 recorded loops does that.
 
+### Poles are a real contact
+
+A pole plant is a strut, not a button. The tip is planted at a fixed point in the
+snow and from then on it can only *push* — a planted pole carries compression and
+nothing else. You drive against it until your arm runs out of reach, at which
+point it trails free and the stroke is over.
+
+That one constraint produces both behaviours without either being special-cased,
+and it is why the two plants go in different places:
+
+- **Turning** plants ahead and to the inside. The strut pushes back and inward,
+  so it pivots you into the turn and costs you a little speed. That is what a
+  turn plant actually is — timing and rotation, not propulsion.
+- **Running straight** plants at the boot. You glide over the tip, the strut
+  swings round to point forward, and *that* is where the push comes from. Planting
+  ahead and expecting to be driven along has the geometry backwards.
+
+Stroke length is what stops it being a speed button: you get one arm's worth per
+plant and then you have to reset. Snowboarders, obviously, have no poles.
+
 ### Crashes are simulated too
 
 Lose it and a 16-joint Verlet ragdoll takes over, seeded with the exact velocity
@@ -165,12 +185,13 @@ grabs; drag it to pick which grab from the radial.
 | `W` `S` | Fore/aft weight — nose and tail press (flip in the air) |
 | `Q` `E` | Wind up rotation against the edge |
 | `Space` | Hold to load the legs, release to pop |
+| `F` | Plant a pole (skis) |
 | `Shift` | Tuck — drops your moment of inertia |
-| `Z X C V F G` | Grabs |
+| `Z X C V G H` | Grabs |
 | `R` `T` `P` `Esc` | Reset · camera · photo · pause |
 
 **Gamepad.** Left stick steers, right stick trims in the air, right trigger
-loads, face buttons and bumpers grab.
+loads, left bumper plants a pole, face buttons grab.
 
 ### The realism slider
 

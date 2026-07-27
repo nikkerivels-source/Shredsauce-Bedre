@@ -325,18 +325,28 @@ export class RiderMesh {
       this.planks[0].quaternion.copy(_boardQuat);
     }
 
-    // Poles: hang from the hands, angled down and back and splayed a little.
+    // Poles run from the hand to whatever tip the solver produced. A planted
+    // pole is anchored in the snow, so it visibly stays behind as the skier
+    // drives past it, and it stretches to reach — which is exactly what a pole
+    // does through a stroke.
     for (let i = 0; i < this.poles.length; i++) {
       const hand = joints[i === 0 ? J.handL : J.handR];
-      const side = i === 0 ? -1 : 1;
-      _poleDir
-        .set(0, 0, 0)
-        .addScaledVector(_headUp, -1)
-        .addScaledVector(_fwd, -0.46)
-        .addScaledVector(_side, side * 0.22)
-        .normalize();
-      this.poles[i].position.set(hand.x, hand.y, hand.z);
+      const tip = pose.poleTips[i];
+      _poleFrom.set(hand.x, hand.y, hand.z);
+      _poleTo.set(tip.x, tip.y, tip.z);
+      _poleDir.subVectors(_poleTo, _poleFrom);
+      const reach = _poleDir.length();
+      if (reach < 0.05) {
+        this.poles[i].visible = false;
+        continue;
+      }
+      this.poles[i].visible = true;
+      _poleDir.divideScalar(reach);
+      this.poles[i].position.copy(_poleFrom);
       this.poles[i].quaternion.setFromUnitVectors(DOWN, _poleDir);
+      // The pole is modelled a shade over a metre long; scale it along its own
+      // axis so the drawn shaft always ends at the tip.
+      this.poles[i].scale.set(1, reach / POLE_MODEL_LENGTH, 1);
     }
   }
 
@@ -414,6 +424,10 @@ const _boardUp = new THREE.Vector3();
 const _pelvis = new THREE.Vector3();
 const _chest = new THREE.Vector3();
 const _poleDir = new THREE.Vector3();
+const _poleFrom = new THREE.Vector3();
+const _poleTo = new THREE.Vector3();
+/** Height of the pole group as modelled, from grip to tip. */
+const POLE_MODEL_LENGTH = 1.1;
 const _m = new THREE.Matrix4();
 const _boardQuat = new THREE.Quaternion();
 const UP = new THREE.Vector3(0, 1, 0);

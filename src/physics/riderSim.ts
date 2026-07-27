@@ -25,6 +25,8 @@ export interface RiderInput {
   airRoll: number;
   /** Held to commit to a grind rather than bouncing off a rail. */
   grind: boolean;
+  /** 0..1 pole plant. Skis only. Plants the inside pole, or both when straight. */
+  plant: number;
 }
 
 export function neutralInput(): RiderInput {
@@ -39,6 +41,7 @@ export function neutralInput(): RiderInput {
     airPitch: 0,
     airRoll: 0,
     grind: false,
+    plant: 0,
   };
 }
 
@@ -64,6 +67,21 @@ export interface ContactReport {
   normalForce: number;
   /** Sideways slip speed at this point, m/s. Drives spray. */
   slipSpeed: number;
+}
+
+/** Solved state of one pole, for rendering and for the HUD. */
+export interface PoleReport {
+  planted: boolean;
+  /** World position of the tip — the planted point, or where it hangs. */
+  tipX: number;
+  tipY: number;
+  tipZ: number;
+  /** World position of the hand holding it. */
+  handX: number;
+  handY: number;
+  handZ: number;
+  /** Compression carried along the strut, newtons. */
+  force: number;
 }
 
 export type SimEventType =
@@ -124,6 +142,8 @@ export interface Telemetry {
   pressureCentre: number;
   /** Lateral ground reaction in g. This is the number that reads as "grip". */
   lateralG: number;
+  /** Total compression carried by planted poles, newtons. */
+  poleForce: number;
   bailReason: string;
 }
 
@@ -179,6 +199,8 @@ export class RiderSim {
   bailReason = '';
 
   readonly contacts: ContactReport[] = [];
+  /** Left pole, then right. */
+  readonly poles: [PoleReport, PoleReport] = [blankPole(), blankPole()];
   readonly events: SimEvent[] = [];
   readonly telemetry: Telemetry = {
     state: 'riding',
@@ -202,6 +224,7 @@ export class RiderSim {
     grindBalanceRate: 0,
     pressureCentre: 0,
     lateralG: 0,
+    poleForce: 0,
     bailReason: '',
   };
 
@@ -357,6 +380,7 @@ export class RiderSim {
     this.sForce.y -= M * this.tuning.gravity;
 
     this.applyAerodynamics(input);
+    this.solvePoles(dt, input);
 
     // Surface reference under the rider.
     this.field.sample(
@@ -394,6 +418,125 @@ export class RiderSim {
 
     this.enforceBounds();
     this.packTimer += dt;
+  }
+
+  /**
+   * Pole plants.
+   *
+   * A pole is a strut, not a button. The tip is planted at a fixed world point
+   * and from then on it can only *push* — a planted pole carries compression and
+   * nothing else. The rider drives against it until the arm runs out of reach,
+   * at which point the pole trails free and the stroke is over. That single
+   * constraint produces both behaviours for free: plant beside you and the force
+   * is lateral, so it pivots you into the turn; plant behind and it is
+   * longitudinal, so it drives you forward across a flat.
+   *
+   * The stroke length is what stops this being a free speed button. You get one
+   * arm's worth of push per plant and then you have to reset.
+   */
+  private solvePoles(dt: number, input: RiderInput): void {
+    if (this.gear.discipline !== 'skis') {
+      this.poles[0].planted = false;
+      this.poles[1].planted = false;
+      this.poles[0].force = 0;
+      this.poles[1].force = 0;
+      return;
+    }
+
+    // Committing to a turn plants the inside pole on its own, scaled by assist.
+    // With assist off it is entirely down to the player.
+    const auto = this.tuning.assist * clamp01((Math.abs(input.lean) - 0.45) / 0.35);
+    const demand = clamp01(Math.max(input.plant, auto));
+    const turning = Math.abs(input.lean) > 0.25;
+    const insideSide = turning ? sign(input.lean) : 0;
+
+    const poleLength = 1.22;
+    const snowHold = lerp(0.5, 1, this.sSurface.hardness);
+
+    for (let i = 0; i < 2; i++) {
+      const side = i === 0 ? -1 : 1;
+      const pole = this.poles[i];
+      // In a turn only the inside pole is in play; running straight, both are.
+      const active = demand > 0.06 && (insideSide === 0 || insideSide === side);
+
+      const hand = _poleHand
+        .copy(this.position)
+        .addScaled(this.sBodyUp, -0.02)
+        .addScaled(this.sBodyRight, side * 0.44)
+        .addScaled(this.sBodyFwd, 0.22);
+      pole.handX = hand.x;
+      pole.handY = hand.y;
+      pole.handZ = hand.z;
+
+      if (!pole.planted) {
+        pole.force = 0;
+        // Hang the tip down and back so the render has something to draw.
+        const rest = _poleDirTmp
+          .copy(this.sBodyUp)
+          .scale(-1)
+          .addScaled(this.sBodyFwd, -0.44)
+          .addScaled(this.sBodyRight, side * 0.2)
+          .normalize();
+        _poleTip.copy(hand).addScaled(rest, poleLength);
+        pole.tipX = _poleTip.x;
+        pole.tipY = _poleTip.y;
+        pole.tipZ = _poleTip.z;
+
+        if (!active || this.state !== 'riding') continue;
+
+        // Where the tip goes depends on what the plant is *for*, and the two
+        // are genuinely different actions:
+        //
+        //   Turning — plant ahead and to the inside. The strut then pushes back
+        //   and inward, which is a pivot and a brake. That is what a turn plant
+        //   does in reality, and why racers use it for timing rather than speed.
+        //
+        //   Running straight — plant at the boot. The tip is left behind as you
+        //   glide over it, the strut swings to point forward, and that is where
+        //   propulsion comes from. Planting ahead and expecting to be pushed
+        //   along has the geometry backwards.
+        const ahead = turning ? 0.5 : -0.08;
+        const reach = _poleDirTmp
+          .copy(this.sBodyUp)
+          .scale(-1)
+          .addScaled(this.sBodyFwd, ahead)
+          .addScaled(this.sBodyRight, side * 0.26)
+          .normalize();
+        _poleTip.copy(hand).addScaled(reach, poleLength);
+        const ground = this.field.heightAt(_poleTip.x, _poleTip.z);
+        // Only bites if the tip actually reaches the snow.
+        if (_poleTip.y > ground + 0.12) continue;
+        pole.planted = true;
+        pole.tipX = _poleTip.x;
+        pole.tipY = ground;
+        pole.tipZ = _poleTip.z;
+        continue;
+      }
+
+      // --- Planted: push along the strut -----------------------------------
+      _poleTip.set(pole.tipX, pole.tipY, pole.tipZ);
+      const strut = _poleDirTmp.subVectors(hand, _poleTip);
+      const reachLeft = strut.length();
+      if (!active || reachLeft > poleLength || this.state !== 'riding') {
+        pole.planted = false;
+        pole.force = 0;
+        continue;
+      }
+      strut.scale(1 / Math.max(reachLeft, 1e-4));
+
+      // A push you can actually sustain across the reach, tailing off as the
+      // arm straightens out. The hard limit on a stroke is the geometry above,
+      // not this curve.
+      const stroke = clamp01(1 - reachLeft / poleLength);
+      const armForce = 175 * demand * snowHold * (0.62 + stroke * 0.55);
+      pole.force = armForce;
+
+      const force = _poleForce.copy(strut).scale(armForce);
+      this.sForce.add(force);
+      const r = _poleR.subVectors(hand, this.position);
+      this.sTorque.add(_poleTorque.crossVectors(r, force));
+    }
+    void dt;
   }
 
   private refreshBodyFrame(): void {
@@ -1195,6 +1338,8 @@ export class RiderSim {
     this.bailReason = reason;
     this.bailTimer = 1.4;
     this.grind = null;
+    this.poles[0].planted = false;
+    this.poles[1].planted = false;
     // Dump some energy into tumbling so the crash reads as a crash.
     this.angularMomentum.addScaled(this.sBodyRight, this.velocity.length() * 2.5);
     this.velocity.scale(0.72);
@@ -1252,6 +1397,7 @@ export class RiderSim {
     t.grindBalanceRate = this.grindBalanceRate;
     t.pressureCentre = this.lastCop;
     t.lateralG = this.lastLateralG;
+    t.poleForce = this.poles[0].force + this.poles[1].force;
     t.bailReason = this.bailReason;
   }
 
@@ -1291,6 +1437,16 @@ const _normalForce = new Float64Array(CONTACT_SAMPLES);
 const _flexTmp = new Float64Array(CONTACT_SAMPLES);
 const _zPos = new Float64Array(CONTACT_SAMPLES);
 const _rTmp = new Vec3();
+const _poleHand = new Vec3();
+const _poleTip = new Vec3();
+const _poleDirTmp = new Vec3();
+const _poleForce = new Vec3();
+const _poleR = new Vec3();
+const _poleTorque = new Vec3();
+
+function blankPole(): PoleReport {
+  return { planted: false, tipX: 0, tipY: 0, tipZ: 0, handX: 0, handY: 0, handZ: 0, force: 0 };
+}
 const _emA = new Vec3();
 const _emB = new Vec3();
 const _tTmp = new Vec3();

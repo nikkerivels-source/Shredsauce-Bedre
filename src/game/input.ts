@@ -32,8 +32,9 @@ export function defaultKeymap(): Record<string, string> {
     KeyX: 'grab2',
     KeyC: 'grab3',
     KeyV: 'grab4',
-    KeyF: 'grab5',
-    KeyG: 'grab6',
+    KeyG: 'grab5',
+    KeyH: 'grab6',
+    KeyF: 'plant',
     KeyR: 'reset',
     KeyT: 'camera',
     KeyP: 'photo',
@@ -250,6 +251,7 @@ export class InputManager {
     let crouchTarget = 0;
     let tuck = 0;
     let grab: string | null = null;
+    let plant = 0;
     let airYaw = 0;
     let airPitch = 0;
     let airRoll = 0;
@@ -263,6 +265,7 @@ export class InputManager {
     if (this.keys.has('twistRight')) twistTarget += 1;
     if (this.keys.has('crouch')) crouchTarget = 1;
     if (this.keys.has('tuck')) tuck = 1;
+    if (this.keys.has('plant')) plant = 1;
     for (let n = 1; n <= 8; n++) {
       if (this.keys.has(`grab${n}`)) {
         grab = this.settings.grabWheel[n - 1] ?? null;
@@ -279,6 +282,7 @@ export class InputManager {
       crouchTarget = Math.max(crouchTarget, pad.crouch);
       tuck = Math.max(tuck, pad.tuck);
       if (pad.grabIndex >= 0) grab = this.settings.grabWheel[pad.grabIndex] ?? grab;
+      plant = Math.max(plant, pad.plant);
       airYaw += pad.rightX;
       airPitch += pad.rightY;
     }
@@ -341,6 +345,7 @@ export class InputManager {
     i.airPitch = clamp(airPitch, -1, 1);
     i.airRoll = clamp(airRoll + this.twistAxis * (airborne ? 0.6 : 0), -1, 1);
     i.grind = this.crouchAxis < 0.5;
+    i.plant = clamp01(plant);
     return i;
   }
 
@@ -363,6 +368,7 @@ export class InputManager {
     twist: number;
     crouch: number;
     tuck: number;
+    plant: number;
     grabIndex: number;
   } | null {
     const pads = navigator.getGamepads?.();
@@ -376,8 +382,8 @@ export class InputManager {
     const trig = (n: number) => buttons[n]?.value ?? 0;
 
     let grabIndex = -1;
-    // Face buttons and bumpers cover the first six grabs.
-    for (let i = 0; i < 6; i++) {
+    // Face buttons cover the first four grabs; the bumpers are poling and tuck.
+    for (let i = 0; i < 4; i++) {
       if (btn(i)) {
         grabIndex = i;
         break;
@@ -391,6 +397,8 @@ export class InputManager {
       twist: trig(7) - trig(6),
       crouch: trig(7),
       tuck: trig(6),
+      // Left bumper: the hand that is already free.
+      plant: btn(4),
       grabIndex,
     };
   }

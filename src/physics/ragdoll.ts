@@ -105,6 +105,9 @@ export interface RiderPose {
   boardForward: Vec3;
   /** True while the ragdoll owns the pose. */
   limp: boolean;
+  /** Solved pole tips, left then right. Skis only. */
+  poleTips: [Vec3, Vec3];
+  polePlanted: [boolean, boolean];
 }
 
 export function makePose(): RiderPose {
@@ -115,6 +118,8 @@ export function makePose(): RiderPose {
     boardUp: new Vec3(0, 1, 0),
     boardForward: new Vec3(0, 0, 1),
     limp: false,
+    poleTips: [new Vec3(), new Vec3()],
+    polePlanted: [false, false],
   };
 }
 
@@ -220,6 +225,15 @@ export function poseFromRider(
 
   placeElbow(joints[J.shoulderL], joints[J.handL], joints[J.elbowL], _up);
   placeElbow(joints[J.shoulderR], joints[J.handR], joints[J.elbowR], _up);
+
+  // The renderer draws each pole from the hand to the tip the solver produced,
+  // so a planted pole visibly stays put in the snow while the skier moves past
+  // it. Nothing here invents a position.
+  for (let i = 0; i < 2; i++) {
+    const report = sim.poles[i];
+    pose.poleTips[i].set(report.tipX, report.tipY, report.tipZ);
+    pose.polePlanted[i] = report.planted;
+  }
 
   pose.limp = false;
   return pose;

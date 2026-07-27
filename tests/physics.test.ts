@@ -264,6 +264,81 @@ describe('rider simulation', () => {
     expect(result.bails + (sim.state === 'bailed' ? 1 : 0)).toBeGreaterThan(0);
   });
 
+  it('poles push you along a flat, and only for one arm-stroke each plant', () => {
+    // A near-flat run, so gravity is not what is doing the work.
+    const level = flatLevel();
+    level.terrain.slopeAngle = 3;
+    const baker = new TerrainBaker(level);
+    const tuning = defaultTuning();
+    tuning.assist = 0;
+    const make = () => {
+      const sim = new RiderSim(baker.field, level, [], getGear('twin-172'), tuning);
+      sim.velocity.set(0, 0, 3);
+      return sim;
+    };
+
+    const coasting = make();
+    run(coasting, 4);
+
+    const poling = make();
+    // Plant, release, plant again — the stroke has to be reset to keep working.
+    run(poling, 4, (t, i) => {
+      i.plant = t % 0.9 < 0.5 ? 1 : 0;
+    });
+
+    expect(poling.telemetry.speed).toBeGreaterThan(coasting.telemetry.speed + 0.4);
+
+    // Holding it down re-plants each time the arm runs out, which is exactly
+    // what continuous poling is — but the stroke limit still caps it well short
+    // of a thruster.
+    const held = make();
+    run(held, 4, (_t, i) => {
+      i.plant = 1;
+    });
+    expect(held.telemetry.speed).toBeLessThan(coasting.telemetry.speed + 9);
+  });
+
+  it('gives a snowboarder no poles at all', () => {
+    const level = flatLevel();
+    const baker = new TerrainBaker(level);
+    const sim = new RiderSim(baker.field, level, [], getGear('park-155'), defaultTuning());
+    run(sim, 3, (_t, i) => {
+      i.plant = 1;
+    });
+    expect(sim.poles[0].planted).toBe(false);
+    expect(sim.poles[1].planted).toBe(false);
+    expect(sim.telemetry.poleForce).toBe(0);
+  });
+
+  it('plants a pole into the snow and carries compression through it', () => {
+    const level = flatLevel();
+    const baker = new TerrainBaker(level);
+    const sim = new RiderSim(baker.field, level, [], getGear('twin-172'), defaultTuning());
+    let sawPlant = false;
+    let peak = 0;
+    run(sim, 4, (t, i) => {
+      i.plant = t > 1 && t % 1.2 < 0.6 ? 1 : 0;
+    });
+    // Re-run sampling per frame, since `run` only reports the end state.
+    const sim2 = new RiderSim(baker.field, level, [], getGear('twin-172'), defaultTuning());
+    const input = neutralInput();
+    for (let t = 0, dt = 1 / 60; t < 4; t += dt) {
+      input.plant = t > 1 && t % 1.2 < 0.6 ? 1 : 0;
+      sim2.step(dt, input);
+      if (sim2.poles[0].planted || sim2.poles[1].planted) sawPlant = true;
+      peak = Math.max(peak, sim2.telemetry.poleForce);
+    }
+    expect(sawPlant).toBe(true);
+    expect(peak).toBeGreaterThan(20);
+    // A planted tip sits on the snow, not floating above or buried under it.
+    const tip = sim2.poles[0].planted ? sim2.poles[0] : sim2.poles[1];
+    if (tip.planted) {
+      const ground = baker.field.heightAt(tip.tipX, tip.tipZ);
+      expect(Math.abs(tip.tipY - ground)).toBeLessThan(0.4);
+    }
+    expect(sim.position.isFinite()).toBe(true);
+  });
+
   it('recovers to riding after a bail', () => {
     const { sim } = makeSim();
     sim.bail('test');
