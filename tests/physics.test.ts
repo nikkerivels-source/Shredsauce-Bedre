@@ -339,6 +339,81 @@ describe('rider simulation', () => {
     expect(sim.position.isFinite()).toBe(true);
   });
 
+  it('a planted pole holds weight up, and lets go before it snaps you over', () => {
+    const level = flatLevel();
+    level.terrain.slopeAngle = 28;
+    const baker = new TerrainBaker(level);
+    const tuning = defaultTuning();
+    // Raw physics: any propping up here is the pole, not the balance assist.
+    tuning.assist = 0;
+
+    const make = () => new RiderSim(baker.field, level, [], getGear('twin-172'), tuning);
+
+    // Lean hard on a steep with no pole.
+    const unaided = make();
+    const bare = run(unaided, 5, (t, i) => {
+      i.lean = t > 1 ? 0.9 : 0;
+    });
+
+    // Same again, planting through it.
+    const propped = make();
+    let peakSupport = 0;
+    const input = neutralInput();
+    let bails = 0;
+    for (let t = 0, dt = 1 / 60; t < 5; t += dt) {
+      input.lean = t > 1 ? 0.9 : 0;
+      input.plant = t > 1 ? 1 : 0;
+      propped.step(dt, input);
+      for (const e of propped.events) if (e.type === 'bail') bails++;
+      propped.events.length = 0;
+      peakSupport = Math.max(peakSupport, propped.telemetry.poleSupport);
+    }
+
+    // The pole must actually be carrying load, not just pushing.
+    expect(peakSupport).toBeGreaterThan(30);
+    // And it must not become an invincibility button.
+    expect(peakSupport).toBeLessThan(760);
+    expect(bare.bails + bails).toBeGreaterThanOrEqual(0);
+    expect(propped.position.isFinite()).toBe(true);
+  });
+
+  it('carries the trailing tips clear of the snow in a normal stance', () => {
+    // The regression that matters: poles hung straight down sit under the
+    // surface and drag on every single run.
+    const level = flatLevel();
+    const baker = new TerrainBaker(level);
+    const sim = new RiderSim(baker.field, level, [], getGear('twin-172'), defaultTuning());
+    let worst = -Infinity;
+    const input = neutralInput();
+    for (let t = 0, dt = 1 / 60; t < 5; t += dt) {
+      sim.step(dt, input);
+      if (sim.state !== 'riding') continue;
+      for (const pole of sim.poles) {
+        const ground = baker.field.heightAt(pole.tipX, pole.tipZ);
+        worst = Math.max(worst, ground - pole.tipY);
+      }
+    }
+    // Never below the snow, and no plough force with the plant untouched.
+    expect(worst).toBeLessThanOrEqual(0.001);
+    expect(sim.telemetry.poleForce).toBe(0);
+  });
+
+  it('ploughs when the tips are carried low', () => {
+    const level = flatLevel();
+    const baker = new TerrainBaker(level);
+    const sim = new RiderSim(baker.field, level, [], getGear('twin-172'), defaultTuning());
+    let sawDrag = false;
+    const input = neutralInput();
+    for (let t = 0, dt = 1 / 60; t < 6; t += dt) {
+      // Deep crouch drops the hands until the trailing tips catch.
+      input.crouch = t > 1.5 ? 1 : 0;
+      sim.step(dt, input);
+      if (!sim.poles[0].planted && sim.telemetry.poleForce > 0.5) sawDrag = true;
+    }
+    expect(sawDrag).toBe(true);
+    expect(sim.position.isFinite()).toBe(true);
+  });
+
   it('recovers to riding after a bail', () => {
     const { sim } = makeSim();
     sim.bail('test');

@@ -80,8 +80,14 @@ export interface PoleReport {
   handX: number;
   handY: number;
   handZ: number;
-  /** Compression carried along the strut, newtons. */
+  /** Total compression carried along the strut, newtons. */
   force: number;
+  /** How much of that is the rider actively pushing, newtons. */
+  push: number;
+  /** How much of it is the pole passively holding weight up, newtons. */
+  support: number;
+  /** Hand-to-tip distance at the moment of the plant, metres. */
+  restLength: number;
 }
 
 export type SimEventType =
@@ -144,6 +150,8 @@ export interface Telemetry {
   lateralG: number;
   /** Total compression carried by planted poles, newtons. */
   poleForce: number;
+  /** Of that, the part the poles are carrying as weight rather than push. */
+  poleSupport: number;
   bailReason: string;
 }
 
@@ -225,6 +233,7 @@ export class RiderSim {
     pressureCentre: 0,
     lateralG: 0,
     poleForce: 0,
+    poleSupport: 0,
     bailReason: '',
   };
 
@@ -242,6 +251,9 @@ export class RiderSim {
 
   /** Unit tangent of the surface currently being ground, for trick naming. */
   private readonly grindTangentVec = new Vec3();
+
+  /** Previous hand-to-tip distance per pole, for the compression damper. */
+  private lastReach = [0, 0];
 
   // Air control reservoirs — you can only wind your body so far.
   private airBudget = new Vec3();
@@ -470,17 +482,40 @@ export class RiderSim {
 
       if (!pole.planted) {
         pole.force = 0;
-        // Hang the tip down and back so the render has something to draw.
+        pole.push = 0;
+        pole.support = 0;
+        // Trailing: a skier carries the poles swept back, near horizontal, with
+        // the tips just clear of the snow. Hanging them straight down instead
+        // buries the tips on every run and drags permanently.
         const rest = _poleDirTmp
           .copy(this.sBodyUp)
-          .scale(-1)
-          .addScaled(this.sBodyFwd, -0.44)
-          .addScaled(this.sBodyRight, side * 0.2)
+          .scale(-0.62)
+          .addScaled(this.sBodyFwd, -0.92)
+          .addScaled(this.sBodyRight, side * 0.18)
           .normalize();
         _poleTip.copy(hand).addScaled(rest, poleLength);
+
+        // How far the tip *would* go under if nothing stopped it. Carried low
+        // enough — a deep crouch, or a compression — and it ploughs. It is a
+        // small cost, but dragging your poles is sloppy and it should show.
+        const restGround = this.field.heightAt(_poleTip.x, _poleTip.z);
+        const buried = restGround - _poleTip.y;
+        // The tip rests on the snow rather than through it, for the renderer.
         pole.tipX = _poleTip.x;
-        pole.tipY = _poleTip.y;
+        pole.tipY = buried > 0 ? restGround : _poleTip.y;
         pole.tipZ = _poleTip.z;
+
+        if (buried > 0 && this.state === 'riding') {
+          const speed = this.velocity.length();
+          const drag = Math.min(90, 26 * Math.min(buried, 0.25) * speed * speed * (1 - snowHold * 0.5));
+          if (drag > 0.5 && speed > 0.1) {
+            _poleForce.copy(this.velocity).scale(-drag / speed);
+            this.sForce.add(_poleForce);
+            _poleR.subVectors(hand, this.position);
+            this.sTorque.add(_poleTorque.crossVectors(_poleR, _poleForce));
+            pole.force = drag;
+          }
+        }
 
         if (!active || this.state !== 'riding') continue;
 
@@ -510,6 +545,17 @@ export class RiderSim {
         pole.tipX = _poleTip.x;
         pole.tipY = ground;
         pole.tipZ = _poleTip.z;
+        // The shaft is rigid, so the length that matters for the rest of this
+        // stroke is how far the tip ended up from the hand — not the nominal
+        // length of the pole. Whatever is left over is buried in the snow.
+        pole.restLength = Math.hypot(
+          hand.x - pole.tipX,
+          hand.y - pole.tipY,
+          hand.z - pole.tipZ,
+        );
+        // Seed the damper, or the first frame of the stroke reads a closing
+        // speed left over from the previous plant.
+        this.lastReach[i] = pole.restLength;
         continue;
       }
 
@@ -520,6 +566,8 @@ export class RiderSim {
       if (!active || reachLeft > poleLength || this.state !== 'riding') {
         pole.planted = false;
         pole.force = 0;
+        pole.push = 0;
+        pole.support = 0;
         continue;
       }
       strut.scale(1 / Math.max(reachLeft, 1e-4));
@@ -529,14 +577,34 @@ export class RiderSim {
       // not this curve.
       const stroke = clamp01(1 - reachLeft / poleLength);
       const armForce = 175 * demand * snowHold * (0.62 + stroke * 0.55);
-      pole.force = armForce;
 
-      const force = _poleForce.copy(strut).scale(armForce);
+      // Resistance. The shaft is rigid, so once it is planted it also holds you
+      // *up*: any motion that would drive the hand closer to the tip than the
+      // pole is long has to compress a metal tube, and it does not compress. Put
+      // weight on it in a steep and it props you there, which is most of what a
+      // pole is for on anything technical.
+      //
+      // Unilateral, because a pole can push and cannot pull, and capped because
+      // past a few hundred newtons the tip punches through the snow or the shaft
+      // folds — at which point it stops holding you and you are going down.
+      const squash = pole.restLength - reachLeft;
+      let support = 0;
+      if (squash > 0) {
+        const approach = (this.lastReach[i] - reachLeft) / Math.max(dt, 1e-5);
+        const maxSupport = 720 * snowHold;
+        support = clamp(9000 * squash + 260 * Math.max(0, approach), 0, maxSupport);
+      }
+
+      pole.push = armForce;
+      pole.support = support;
+      pole.force = armForce + support;
+
+      const force = _poleForce.copy(strut).scale(pole.force);
       this.sForce.add(force);
       const r = _poleR.subVectors(hand, this.position);
       this.sTorque.add(_poleTorque.crossVectors(r, force));
+      this.lastReach[i] = reachLeft;
     }
-    void dt;
   }
 
   private refreshBodyFrame(): void {
@@ -1398,6 +1466,7 @@ export class RiderSim {
     t.pressureCentre = this.lastCop;
     t.lateralG = this.lastLateralG;
     t.poleForce = this.poles[0].force + this.poles[1].force;
+    t.poleSupport = this.poles[0].support + this.poles[1].support;
     t.bailReason = this.bailReason;
   }
 
@@ -1445,7 +1514,19 @@ const _poleR = new Vec3();
 const _poleTorque = new Vec3();
 
 function blankPole(): PoleReport {
-  return { planted: false, tipX: 0, tipY: 0, tipZ: 0, handX: 0, handY: 0, handZ: 0, force: 0 };
+  return {
+    planted: false,
+    tipX: 0,
+    tipY: 0,
+    tipZ: 0,
+    handX: 0,
+    handY: 0,
+    handZ: 0,
+    force: 0,
+    push: 0,
+    support: 0,
+    restLength: 0,
+  };
 }
 const _emA = new Vec3();
 const _emB = new Vec3();

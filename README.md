@@ -119,6 +119,19 @@ and it is why the two plants go in different places:
 Stroke length is what stops it being a speed button: you get one arm's worth per
 plant and then you have to reset. Snowboarders, obviously, have no poles.
 
+A planted pole also **resists**. The shaft is rigid, so anything that would drive
+your hand closer to the tip than the pole is long has to compress a metal tube,
+and it does not compress — put weight on it in a steep and it props you there,
+which is most of what a pole is for on anything technical. That support is
+unilateral, like the push, and it is capped: past a few hundred newtons a real
+tip punches through the snow or the shaft folds, so the pole stops holding you
+and you go down with it. Hard snow holds more than soft.
+
+Resistance runs the other way too. The poles are carried swept back with the tips
+just clear of the snow, but drop into a deep enough crouch, or get folded up by a
+compression, and the tips catch and plough — a small, quadratic-in-speed cost for
+riding sloppy.
+
 ### Crashes are simulated too
 
 Lose it and a 16-joint Verlet ragdoll takes over, seeded with the exact velocity
