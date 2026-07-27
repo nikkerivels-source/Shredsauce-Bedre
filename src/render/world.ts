@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { DEG, Vec3, clamp, clamp01, fbm2D, lerp, makeRng } from '../core/math.ts';
 import type { Heightfield } from '../world/heightfield.ts';
-import type { LevelDef, PropFeature } from '../world/level.ts';
+import type { LevelDef, PropKind } from '../world/level.ts';
 import type { GrindSurface } from '../physics/rails.ts';
 
 /**
@@ -722,16 +722,54 @@ export function buildGrindMeshes(surfaces: readonly GrindSurface[]): THREE.Group
   return group;
 }
 
-/** Trees, rocks and course markers. */
+/** Props that cannot be instanced, because they carry something besides a mesh. */
+const ONE_OFF_PROPS = new Set<PropKind>(['firePit']);
+
+interface PropPlacement {
+  kind: PropKind;
+  x: number;
+  z: number;
+  scale: number;
+  heading: number;
+  /** Extra per-instance tilt, used to stop rocks looking stamped. */
+  tiltX?: number;
+  tiltZ?: number;
+  /** Vertical squash, for the same reason. */
+  squashY?: number;
+  /** Lift off the ground, for props modelled about their base. */
+  lift?: number;
+}
+
+const _propPos = new THREE.Vector3();
+const _propQuat = new THREE.Quaternion();
+const _propScale = new THREE.Vector3();
+const _propEuler = new THREE.Euler();
+const _propWorld = new THREE.Matrix4();
+const _propPart = new THREE.Matrix4();
+
+/**
+ * Trees, rocks and course markers, drawn instanced.
+ *
+ * This used to add one `Group` of four meshes per tree. A long run auto-scatters
+ * a tree every six metres and the built levels place a couple of hundred more,
+ * so Powder Bowl was pushing roughly nineteen hundred draw calls and as many
+ * unique geometries before anything else in the scene was counted — and each of
+ * them again in the shadow pass. That is fine on a desktop GPU and completely
+ * unaffordable on the phone this is supposed to run on.
+ *
+ * Now each kind is modelled once at unit scale and every copy is an entry in an
+ * `InstancedMesh` per part, so the same forest costs a handful of calls. Nothing
+ * about the look changes: the per-tree yaw and per-rock tumble that used to be
+ * baked into separate meshes moves into the instance matrix instead.
+ */
 export function buildProps(level: LevelDef, field: Heightfield): THREE.Group {
   const group = new THREE.Group();
   group.name = 'props';
   const rng = makeRng(level.seed ^ 0x5eed);
 
-  const placed: PropFeature[] = level.features.filter((f): f is PropFeature => f.kind === 'prop');
+  const placements: PropPlacement[] = [];
 
   // Scatter trees down the sides so the run reads as a corridor.
-  const auto: Array<{ x: number; z: number; scale: number; kind: 'pine' | 'rock' }> = [];
   const half = level.terrain.width / 2;
   const count = Math.floor(level.terrain.length / 6);
   for (let i = 0; i < count; i++) {
@@ -740,32 +778,129 @@ export function buildProps(level: LevelDef, field: Heightfield): THREE.Group {
     // Bias toward the edges, leaving the middle of the run clear.
     const t = 0.62 + rng() * 0.38;
     const x = side * half * t;
-    auto.push({ x, z, scale: 0.7 + rng() * 0.9, kind: rng() < 0.86 ? 'pine' : 'rock' });
+    const scale = 0.7 + rng() * 0.9;
+    if (rng() < 0.86) {
+      placements.push({ kind: 'pine', x, z, scale, heading: rng() * 360 });
+    } else {
+      placements.push({
+        kind: 'rock',
+        x,
+        z,
+        scale,
+        heading: rng() * 360,
+        tiltX: rng() * 3,
+        tiltZ: rng() * 3,
+        squashY: 0.62 + rng() * 0.3,
+        lift: 0.15 * scale,
+      });
+    }
   }
 
-  for (const tree of auto) {
-    const y = field.heightAt(tree.x, tree.z);
-    group.add(tree.kind === 'pine' ? makePine(tree.x, y, tree.z, tree.scale, rng) : makeRock(tree.x, y, tree.z, tree.scale, rng));
+  for (const prop of level.features) {
+    if (prop.kind !== 'prop') continue;
+    if (prop.prop === 'rock') {
+      placements.push({
+        kind: 'rock',
+        x: prop.x,
+        z: prop.z,
+        scale: prop.scale,
+        heading: prop.heading + rng() * 360,
+        tiltX: rng() * 3,
+        tiltZ: rng() * 3,
+        squashY: 0.62 + rng() * 0.3,
+        lift: 0.15 * prop.scale,
+      });
+    } else if (prop.prop === 'pine' || prop.prop === 'tree') {
+      placements.push({ kind: 'pine', x: prop.x, z: prop.z, scale: prop.scale, heading: rng() * 360 });
+    } else {
+      placements.push({ kind: prop.prop, x: prop.x, z: prop.z, scale: prop.scale, heading: prop.heading });
+    }
   }
 
-  for (const prop of placed) {
-    const y = field.heightAt(prop.x, prop.z);
-    group.add(makeProp(prop, y, rng));
+  // Group by kind, then emit one InstancedMesh per part of each template.
+  const byKind = new Map<PropKind, PropPlacement[]>();
+  for (const p of placements) {
+    const list = byKind.get(p.kind);
+    if (list) list.push(p);
+    else byKind.set(p.kind, [p]);
   }
 
-  for (const gate of level.features) {
-    if (gate.kind !== 'gate') continue;
-    const y = field.heightAt(gate.x, gate.z);
-    group.add(makeGate(gate.x, y, gate.z, gate.width, gate.heading));
+  for (const [kind, list] of byKind) {
+    if (ONE_OFF_PROPS.has(kind)) {
+      for (const p of list) {
+        const node = propTemplate(kind);
+        node.position.set(p.x, field.heightAt(p.x, p.z), p.z);
+        node.rotation.y = p.heading * DEG;
+        node.scale.setScalar(p.scale);
+        group.add(node);
+      }
+      continue;
+    }
+
+    const template = propTemplate(kind);
+    template.updateMatrixWorld(true);
+    const parts: Array<{ mesh: THREE.Mesh; local: THREE.Matrix4 }> = [];
+    template.traverse((node) => {
+      if ((node as THREE.Mesh).isMesh) parts.push({ mesh: node as THREE.Mesh, local: node.matrixWorld.clone() });
+    });
+    if (parts.length === 0) continue;
+
+    for (const part of parts) {
+      const instanced = new THREE.InstancedMesh(part.mesh.geometry, part.mesh.material, list.length);
+      instanced.castShadow = part.mesh.castShadow;
+      instanced.receiveShadow = part.mesh.receiveShadow;
+      for (let i = 0; i < list.length; i++) {
+        const p = list[i];
+        _propPos.set(p.x, field.heightAt(p.x, p.z) + (p.lift ?? 0), p.z);
+        _propEuler.set(p.tiltX ?? 0, p.heading * DEG, p.tiltZ ?? 0);
+        _propQuat.setFromEuler(_propEuler);
+        _propScale.set(p.scale, p.scale * (p.squashY ?? 1), p.scale);
+        _propWorld.compose(_propPos, _propQuat, _propScale);
+        instanced.setMatrixAt(i, _propPart.multiplyMatrices(_propWorld, part.local));
+      }
+      instanced.instanceMatrix.needsUpdate = true;
+      // Culling uses the geometry's own bounds unless told otherwise, which
+      // would cull the whole forest as soon as the origin left the frustum.
+      instanced.computeBoundingSphere();
+      group.add(instanced);
+    }
+  }
+
+  // Gates instance too. A generated slalom can set sixty of them, and two
+  // poles each is another hundred and twenty draws for a pair of sticks.
+  const gates = level.features.filter((f) => f.kind === 'gate');
+  if (gates.length > 0) {
+    const poleGeo = new THREE.CylinderGeometry(0.05, 0.05, 2.4, 6);
+    const poles = new THREE.InstancedMesh(poleGeo, FLAG, gates.length * 2);
+    let i = 0;
+    for (const gate of gates) {
+      const y = field.heightAt(gate.x, gate.z);
+      const h = gate.heading * DEG;
+      for (const side of [-1, 1]) {
+        // Gate width varies, so it rides in the matrix rather than forcing a
+        // separate geometry per gate.
+        _propPos.set(
+          gate.x + Math.cos(h) * side * (gate.width / 2),
+          y + 1.2,
+          gate.z - Math.sin(h) * side * (gate.width / 2),
+        );
+        _propQuat.identity();
+        _propScale.set(1, 1, 1);
+        poles.setMatrixAt(i++, _propWorld.compose(_propPos, _propQuat, _propScale));
+      }
+    }
+    poles.instanceMatrix.needsUpdate = true;
+    poles.computeBoundingSphere();
+    group.add(poles);
   }
 
   return group;
 }
 
-function makePine(x: number, y: number, z: number, scale: number, rng: () => number): THREE.Object3D {
+function makePineTemplate(): THREE.Object3D {
   const g = new THREE.Group();
-  const height = 4.5 * scale;
-  const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.09 * scale, 0.14 * scale, height * 0.35, 6), TRUNK);
+  const height = 4.5;
+  const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.14, height * 0.35, 6), TRUNK);
   trunk.position.y = height * 0.175;
   g.add(trunk);
 
@@ -773,32 +908,36 @@ function makePine(x: number, y: number, z: number, scale: number, rng: () => num
   // as a near-black silhouette, and capping it just muddies the shape.
   for (let i = 0; i < 3; i++) {
     const t = i / 3;
-    const r = (1.2 - t * 0.68) * scale;
-    const h = (2.1 - t * 0.5) * scale;
+    const r = 1.2 - t * 0.68;
+    const h = 2.1 - t * 0.5;
     const cone = new THREE.Mesh(new THREE.ConeGeometry(r, h, 7), NEEDLE);
     cone.position.y = height * 0.3 + t * height * 0.42 + h * 0.35;
     cone.castShadow = true;
     g.add(cone);
   }
-  g.position.set(x, y, z);
-  g.rotation.y = rng() * Math.PI * 2;
   return g;
 }
 
-function makeRock(x: number, y: number, z: number, scale: number, rng: () => number): THREE.Object3D {
-  const rock = new THREE.Mesh(new THREE.IcosahedronGeometry(0.8 * scale, 0), ROCK);
-  rock.position.set(x, y + 0.15 * scale, z);
-  rock.rotation.set(rng() * 3, rng() * 3, rng() * 3);
-  rock.scale.set(1, 0.62 + rng() * 0.3, 1);
+function makeRockTemplate(): THREE.Mesh {
+  // Tumble and squash are per-instance, so they live in the instance matrix
+  // rather than in a geometry built once per rock.
+  const rock = new THREE.Mesh(new THREE.IcosahedronGeometry(0.8, 0), ROCK);
   rock.castShadow = true;
   rock.receiveShadow = true;
   return rock;
 }
 
-function makeProp(prop: PropFeature, y: number, rng: () => number): THREE.Object3D {
-  switch (prop.prop) {
+/**
+ * One copy of an item, modelled at unit scale about its base at the origin.
+ *
+ * Position, heading and scale are applied per instance by `buildProps`, so
+ * nothing in here may read them — a template is built once and shared by every
+ * copy on the mountain.
+ */
+function propTemplate(kind: PropKind): THREE.Object3D {
+  switch (kind) {
     case 'rock':
-      return makeRock(prop.x, y, prop.z, prop.scale, rng);
+      return makeRockTemplate();
     case 'flag': {
       const g = new THREE.Group();
       const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 2.2, 6), METAL);
@@ -806,7 +945,6 @@ function makeProp(prop: PropFeature, y: number, rng: () => number): THREE.Object
       const cloth = new THREE.Mesh(new THREE.PlaneGeometry(0.7, 0.5), FLAG);
       cloth.position.set(0.35, 1.85, 0);
       g.add(pole, cloth);
-      g.position.set(prop.x, y, prop.z);
       return g;
     }
     case 'liftTower': {
@@ -817,8 +955,6 @@ function makeProp(prop: PropFeature, y: number, rng: () => number): THREE.Object
       const arm = new THREE.Mesh(new THREE.BoxGeometry(4.2, 0.22, 0.22), METAL);
       arm.position.y = 10.6;
       g.add(tower, arm);
-      g.position.set(prop.x, y, prop.z);
-      g.scale.setScalar(prop.scale);
       return g;
     }
     case 'cabin': {
@@ -830,16 +966,12 @@ function makeProp(prop: PropFeature, y: number, rng: () => number): THREE.Object
       roof.position.y = 3.8;
       roof.rotation.y = Math.PI / 4;
       g.add(walls, roof);
-      g.position.set(prop.x, y, prop.z);
-      g.rotation.y = prop.heading * DEG;
-      g.scale.setScalar(prop.scale);
       return g;
     }
     case 'tent': {
       const tent = new THREE.Mesh(new THREE.ConeGeometry(1.8, 2.4, 6), FLAG);
-      tent.position.set(prop.x, y + 1.2, prop.z);
+      tent.position.y = 1.2;
       tent.castShadow = true;
-      tent.scale.setScalar(prop.scale);
       return tent;
     }
     case 'sign': {
@@ -849,8 +981,6 @@ function makeProp(prop: PropFeature, y: number, rng: () => number): THREE.Object
       const board = new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.7, 0.06), FLAG);
       board.position.y = 1.9;
       g.add(pole, board);
-      g.position.set(prop.x, y, prop.z);
-      g.rotation.y = prop.heading * DEG;
       return g;
     }
     case 'deadTree': {
@@ -864,13 +994,11 @@ function makeProp(prop: PropFeature, y: number, rng: () => number): THREE.Object
       for (let i = 0; i < 5; i++) {
         const limb = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.09, 1.8, 4), TRUNK);
         limb.position.y = 2.6 + i * 0.55;
-        limb.rotation.z = (i % 2 ? 1 : -1) * (0.7 + rng() * 0.4);
-        limb.rotation.y = rng() * Math.PI * 2;
+        limb.rotation.z = (i % 2 ? 1 : -1) * (0.72 + i * 0.09);
+        limb.rotation.y = i * 2.4;
         limb.translateY(0.8);
         g.add(limb);
       }
-      g.position.set(prop.x, y, prop.z);
-      g.scale.setScalar(prop.scale);
       return g;
     }
     case 'marker': {
@@ -880,8 +1008,6 @@ function makeProp(prop: PropFeature, y: number, rng: () => number): THREE.Object
       const tip = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.075, 0.5, 6), FLAG);
       tip.position.y = 2.85;
       g.add(pole, tip);
-      g.position.set(prop.x, y, prop.z);
-      g.scale.setScalar(prop.scale);
       return g;
     }
     case 'banner': {
@@ -895,9 +1021,6 @@ function makeProp(prop: PropFeature, y: number, rng: () => number): THREE.Object
       const cloth = new THREE.Mesh(new THREE.PlaneGeometry(span, 1.1), PAINT);
       cloth.position.y = 2;
       g.add(cloth);
-      g.position.set(prop.x, y, prop.z);
-      g.rotation.y = prop.heading * DEG;
-      g.scale.setScalar(prop.scale);
       return g;
     }
     case 'arch': {
@@ -913,9 +1036,6 @@ function makeProp(prop: PropFeature, y: number, rng: () => number): THREE.Object
       const top = new THREE.Mesh(new THREE.TorusGeometry(5, 0.45, 8, 20, Math.PI), PAINT);
       top.position.y = 5;
       g.add(top);
-      g.position.set(prop.x, y, prop.z);
-      g.rotation.y = prop.heading * DEG;
-      g.scale.setScalar(prop.scale);
       return g;
     }
     case 'netFence': {
@@ -929,9 +1049,6 @@ function makeProp(prop: PropFeature, y: number, rng: () => number): THREE.Object
       const net = new THREE.Mesh(new THREE.PlaneGeometry(span, 1.9), NET);
       net.position.y = 1.05;
       g.add(net);
-      g.position.set(prop.x, y, prop.z);
-      g.rotation.y = prop.heading * DEG;
-      g.scale.setScalar(prop.scale);
       return g;
     }
     case 'chair': {
@@ -947,9 +1064,6 @@ function makeProp(prop: PropFeature, y: number, rng: () => number): THREE.Object
       const bar = new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.1, 0.1), METAL);
       bar.position.set(0, 7.5, 0.5);
       g.add(hanger, seat, back, bar);
-      g.position.set(prop.x, y, prop.z);
-      g.rotation.y = prop.heading * DEG;
-      g.scale.setScalar(prop.scale);
       return g;
     }
     case 'igloo': {
@@ -962,9 +1076,6 @@ function makeProp(prop: PropFeature, y: number, rng: () => number): THREE.Object
       const mouth = new THREE.Mesh(new THREE.CircleGeometry(0.62, 12), DARK);
       mouth.position.set(0, 0.7, 2.72);
       g.add(dome, door, mouth);
-      g.position.set(prop.x, y, prop.z);
-      g.rotation.y = prop.heading * DEG;
-      g.scale.setScalar(prop.scale);
       return g;
     }
     case 'snowcat': {
@@ -983,9 +1094,6 @@ function makeProp(prop: PropFeature, y: number, rng: () => number): THREE.Object
         g.add(track);
       }
       g.add(body, cab, blade);
-      g.position.set(prop.x, y, prop.z);
-      g.rotation.y = prop.heading * DEG;
-      g.scale.setScalar(prop.scale);
       return g;
     }
     case 'snowGun': {
@@ -1000,9 +1108,6 @@ function makeProp(prop: PropFeature, y: number, rng: () => number): THREE.Object
       mouth.position.set(0, 4.85, 1.0);
       mouth.rotation.x = 0.35;
       g.add(mast, barrel, mouth);
-      g.position.set(prop.x, y, prop.z);
-      g.rotation.y = prop.heading * DEG;
-      g.scale.setScalar(prop.scale);
       return g;
     }
     case 'speaker': {
@@ -1015,9 +1120,6 @@ function makeProp(prop: PropFeature, y: number, rng: () => number): THREE.Object
       const cone = new THREE.Mesh(new THREE.CircleGeometry(0.24, 12), METAL);
       cone.position.set(0, 2.9, 0.31);
       g.add(stand, cab, cone);
-      g.position.set(prop.x, y, prop.z);
-      g.rotation.y = prop.heading * DEG;
-      g.scale.setScalar(prop.scale);
       return g;
     }
     case 'bench': {
@@ -1033,9 +1135,6 @@ function makeProp(prop: PropFeature, y: number, rng: () => number): THREE.Object
         g.add(leg);
       }
       g.add(seat, back);
-      g.position.set(prop.x, y, prop.z);
-      g.rotation.y = prop.heading * DEG;
-      g.scale.setScalar(prop.scale);
       return g;
     }
     case 'firePit': {
@@ -1048,15 +1147,12 @@ function makeProp(prop: PropFeature, y: number, rng: () => number): THREE.Object
       const glow = new THREE.PointLight(0xff7a2f, 12, 14, 2);
       glow.position.y = 0.9;
       g.add(ring, flame, glow);
-      g.position.set(prop.x, y, prop.z);
-      g.scale.setScalar(prop.scale);
       return g;
     }
     case 'barrel': {
       const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.42, 1.1, 12), FLAG);
-      barrel.position.set(prop.x, y + 0.55 * prop.scale, prop.z);
+      barrel.position.y = 0.55;
       barrel.castShadow = true;
-      barrel.scale.setScalar(prop.scale);
       return barrel;
     }
     case 'crate': {
@@ -1070,33 +1166,19 @@ function makeProp(prop: PropFeature, y: number, rng: () => number): THREE.Object
       for (const [bx, by, bz] of stack) {
         const crate = new THREE.Mesh(geo, WOOD);
         crate.position.set(bx, by, bz);
-        crate.rotation.y = rng() * 0.5 - 0.25;
+        crate.rotation.y = (bx - bz) * 0.22;
         crate.castShadow = true;
         g.add(crate);
       }
-      g.position.set(prop.x, y, prop.z);
-      g.rotation.y = prop.heading * DEG;
-      g.scale.setScalar(prop.scale);
       return g;
     }
     case 'tree':
     case 'pine':
     default:
-      return makePine(prop.x, y, prop.z, prop.scale, rng);
+      return makePineTemplate();
   }
 }
 
-function makeGate(x: number, y: number, z: number, width: number, heading: number): THREE.Object3D {
-  const g = new THREE.Group();
-  const h = heading * DEG;
-  for (const side of [-1, 1]) {
-    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 2.4, 6), FLAG);
-    pole.position.set(Math.cos(h) * side * (width / 2), 1.2, -Math.sin(h) * side * (width / 2));
-    g.add(pole);
-  }
-  g.position.set(x, y, z);
-  return g;
-}
 
 /**
  * Falling snow. A single points cloud that follows the camera and wraps around

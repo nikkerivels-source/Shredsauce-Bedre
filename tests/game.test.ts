@@ -18,6 +18,7 @@ import { getGear } from '../src/physics/gear.ts';
 import { Ragdoll, makePose, poseFromRider } from '../src/physics/ragdoll.ts';
 import { ReplayPlayer, ReplayRecorder, makeReplaySample } from '../src/game/replay.ts';
 import { PRESETS, generateLevel } from '../src/game/levels.ts';
+import { buildProps } from '../src/render/world.ts';
 import { cliffBand, jumpLine, jumpSpacing, ledgeDrop, spine } from '../src/game/design.ts';
 import { Session } from '../src/game/session.ts';
 import { LevelEditor } from '../src/game/editor.ts';
@@ -728,6 +729,49 @@ describe('season one', () => {
   it('treats a malformed entitlement as unowned', () => {
     for (const junk of [{ owned: 'yes' }, {}, { owned: false }, null, 'owned']) {
       expect(passOwned({ ...defaultProfile(), pass: junk as never })).toBe(false);
+    }
+  });
+});
+
+describe('scene cost', () => {
+  // A long run auto-scatters a tree every six metres on top of everything the
+  // level places, and a pine is four meshes. Drawn one at a time that is close
+  // to two thousand draw calls of scenery before anything else in the frame,
+  // which a phone cannot afford. Instancing collapses it to a few per kind, and
+  // this is the guard against someone quietly un-instancing it again.
+  it('draws scenery instanced, not one object per tree', () => {
+    for (const preset of PRESETS) {
+      const level = preset.build();
+      const baker = new TerrainBaker(level);
+      const group = buildProps(level, baker.field);
+
+      let instances = 0;
+      let plainMeshes = 0;
+      for (const child of group.children) {
+        const asInstanced = child as unknown as { isInstancedMesh?: boolean; count?: number };
+        if (asInstanced.isInstancedMesh) instances += asInstanced.count ?? 0;
+        else plainMeshes += 1;
+      }
+
+      // Gates and fire pits are the only things allowed to stay one-off.
+      expect(group.children.length).toBeLessThan(120);
+      expect(instances).toBeGreaterThan(plainMeshes);
+    }
+  });
+
+  it('places every scattered tree somewhere real', () => {
+    const level = PRESETS[0].build();
+    const baker = new TerrainBaker(level);
+    const group = buildProps(level, baker.field);
+    for (const child of group.children) {
+      const instanced = child as unknown as {
+        isInstancedMesh?: boolean;
+        instanceMatrix?: { array: Float32Array };
+      };
+      if (!instanced.isInstancedMesh || !instanced.instanceMatrix) continue;
+      // One NaN makes the whole batch vanish rather than just one tree, so it
+      // is worth checking the raw buffer rather than trusting the maths.
+      for (const v of instanced.instanceMatrix.array) expect(Number.isFinite(v)).toBe(true);
     }
   });
 });

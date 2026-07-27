@@ -834,7 +834,13 @@ export class Shell {
       el('div', { class: 'import-row' }, [
         roomInput,
         button('Join', () => this.handlers.onJoinRoom(roomInput.value.trim() || 'bluebird', this.profile.name), 'btn small'),
-        button('Leave', () => this.handlers.onLeaveRoom(), 'btn small ghost'),
+        // Offering to leave a room you were never in is just a dead control.
+        this.connectionStatus === 'offline'
+          ? null
+          : button('Leave', () => {
+              this.handlers.onLeaveRoom();
+              this.refreshMultiplayer();
+            }, 'btn small ghost'),
       ]),
       el('div', { class: 'status-line' }, [`Status: ${this.connectionStatus}`]),
       roster,

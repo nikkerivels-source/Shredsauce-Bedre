@@ -19,7 +19,7 @@ npm run server       # optional: live sessions on ws://localhost:8787
 ```
 
 ```bash
-npm test             # 76 unit tests (physics, tricks, level design, editor, replays)
+npm test             # 78 unit tests (physics, tricks, level design, editor, replays)
 npm run build        # typecheck + production bundle into dist/
 node scripts/smoke.mjs --shots   # drives the built game in a real browser
 ```
@@ -218,6 +218,33 @@ The seam for a real one is `beginCheckout` in `src/game/pass.ts`. Point
 `VITE_CHECKOUT_URL` at a hosted checkout, and replace `consumeCheckoutReturn`'s
 query-parameter placeholder with a server-verified receipt before it records
 anything.
+
+### It has to run on a phone
+
+That claim is load-bearing, so two things are held to it.
+
+**Scenery is instanced.** A long run auto-scatters a tree every six metres on
+top of the couple of hundred each level places, and a pine is four meshes. Drawn
+one at a time, Powder Bowl was pushing around 1,900 draw calls and as many unique
+geometries before anything else in the frame was counted — and every one of them
+again in the shadow pass. Each kind is now modelled once at unit scale and every
+copy is an entry in an `InstancedMesh` per part, which takes the same forest from
+1,928 objects to 9. Nothing about the look changed: the per-tree yaw and per-rock
+tumble that used to be baked into separate geometries moved into the instance
+matrix. A test asserts the batching, and another walks every instance matrix for
+a NaN — one bad value hides the whole batch rather than one tree.
+
+| | before | after |
+|---|---|---|
+| Powder Bowl | ~1,928 | 9 |
+| Superpark | ~1,848 | 14 |
+| Giant Slalom | ~1,816 | 15 |
+
+**The layout is checked at 390px.** The desktop title screen leans on a
+horizontal scrim — dark text column left, mountain right — which on a phone left
+half the menu in white type over bright snow, unreadable. Below 720px the veil
+turns vertical, the navigation stacks to one column, and level cards stop
+dropping their score column on top of the description.
 
 ### Crashes are simulated too
 

@@ -96,7 +96,9 @@ export class WorldView {
     });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, quality.maxPixelRatio));
     this.renderer.shadowMap.enabled = quality.shadows;
-    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    // PCFSoft is deprecated in current three and silently downgrades to PCF
+    // while warning on every boot. Ask for what we actually get.
+    this.renderer.shadowMap.type = THREE.PCFShadowMap;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.22;
 
