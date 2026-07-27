@@ -1809,6 +1809,197 @@ body {
   background: rgba(10, 15, 20, 0.94);
 }
 
+/* --- Season One -------------------------------------------------------- */
+
+.pass-screen {
+  max-width: 720px;
+}
+.pass-head {
+  margin-bottom: 26px;
+}
+.pass-head h1 {
+  margin: 6px 0 0;
+  font-size: clamp(30px, 5.5vw, 46px);
+  font-weight: 700;
+  letter-spacing: -0.035em;
+  line-height: 1;
+}
+.pass-head .subtitle {
+  margin-top: 10px;
+  max-width: 48ch;
+}
+
+.pass-buy,
+.pass-owned {
+  padding: 22px 0;
+  border-top: 1px solid var(--rule-dark);
+  border-bottom: 1px solid var(--rule-dark);
+}
+.pass-price {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.pass-amount {
+  font-family: var(--num);
+  font-size: clamp(34px, 6vw, 48px);
+  font-weight: 600;
+  letter-spacing: -0.045em;
+  line-height: 1;
+}
+.pass-once {
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-weight: 600;
+  color: var(--grey-2);
+}
+/* Said plainly, and styled so it is not mistaken for small print. */
+.pass-warning {
+  margin: 16px 0 0;
+  padding-left: 12px;
+  border-left: 2px solid var(--flag);
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--grey-2);
+  max-width: 56ch;
+}
+.pass-owned strong {
+  font-size: 17px;
+}
+.pass-owned p {
+  margin: 6px 0 0;
+  color: var(--grey-2);
+  font-size: 13px;
+}
+
+.pass-terms {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 20px 30px;
+  margin: 26px 0 34px;
+}
+.pass-term strong {
+  display: block;
+  font-size: 13px;
+  margin-bottom: 4px;
+}
+.pass-term span {
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--grey-2);
+}
+
+.skin-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+  gap: 8px;
+  margin: 4px 0 14px;
+}
+.skin {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 11px;
+  border: 0;
+  border-radius: var(--r);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--snow);
+  font: inherit;
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.14s, box-shadow 0.14s;
+}
+.skin.showcase {
+  cursor: default;
+}
+.skin:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+.skin.worn {
+  box-shadow: inset 0 0 0 1px var(--blue-lt);
+}
+.skin.locked {
+  color: var(--grey);
+}
+.skin.locked .swatch {
+  opacity: 0.45;
+}
+.skin-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Four chips: jacket, pants, helmet, base. Enough to tell kits apart. */
+.swatch {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1px;
+  width: 20px;
+  height: 20px;
+  flex: none;
+  border-radius: 2px;
+  overflow: hidden;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.3);
+}
+.swatch i {
+  display: block;
+}
+
+.pass-tag {
+  margin-left: 7px;
+  padding: 2px 5px;
+  border-radius: 2px;
+  background: var(--blue);
+  color: var(--snow);
+  font-family: var(--font);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  vertical-align: middle;
+}
+
+.pass-gear-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 13px 0;
+  border-bottom: 1px solid var(--rule-dark);
+}
+.pass-gear-row h4 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+.pass-gear-row p {
+  margin: 4px 0 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--grey-2);
+  max-width: 52ch;
+}
+.pass-gear-kind {
+  flex: none;
+  font-size: 10px;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  font-weight: 600;
+  color: var(--grey);
+}
+
+.locked-note.pass-note {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
 /* --- Toasts ------------------------------------------------------------ */
 
 .toasts {

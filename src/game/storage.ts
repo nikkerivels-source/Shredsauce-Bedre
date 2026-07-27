@@ -23,6 +23,17 @@ export interface Profile {
   /** Challenge ids the player has completed. */
   completed: string[];
   riderMass: number;
+  /**
+   * Season One entitlement.
+   *
+   * There is no server, so this is the whole record of ownership and it lives
+   * in the same editable localStorage blob as everything else. That is stated
+   * on the pass screen rather than pretended away — a client-only entitlement
+   * cannot be enforced, and clearing site data loses it.
+   */
+  pass: { owned: boolean; since: number } | null;
+  /** Currently worn skin id, from `SKINS`. */
+  skinId: string;
 }
 
 export function defaultProfile(): Profile {
@@ -42,6 +53,8 @@ export function defaultProfile(): Profile {
     ownedGear: ['park-155', 'twin-172'],
     completed: [],
     riderMass: 74,
+    pass: null,
+    skinId: 'house',
   };
 }
 
@@ -78,7 +91,29 @@ export function loadProfile(): Profile {
   profile.appearance = { ...defaultAppearance(), ...(stored.appearance ?? {}) };
   if (!Array.isArray(profile.ownedGear)) profile.ownedGear = defaultProfile().ownedGear;
   if (!Array.isArray(profile.completed)) profile.completed = [];
+  if (typeof profile.skinId !== 'string') profile.skinId = 'house';
+  // Anything other than a well-formed entitlement counts as not owning it.
+  profile.pass =
+    profile.pass && typeof profile.pass === 'object' && profile.pass.owned === true
+      ? { owned: true, since: Number(profile.pass.since) || Date.now() }
+      : null;
   return profile;
+}
+
+export function passOwned(profile: Profile): boolean {
+  return profile.pass?.owned === true;
+}
+
+/**
+ * Records the entitlement locally.
+ *
+ * Call this only after a purchase the game can stand behind. With no server
+ * there is nothing to verify against, which is exactly why the pass screen says
+ * payment is not connected rather than calling this on a button press.
+ */
+export function grantPass(profile: Profile): void {
+  if (passOwned(profile)) return;
+  profile.pass = { owned: true, since: Date.now() };
 }
 
 export function saveProfile(profile: Profile): void {

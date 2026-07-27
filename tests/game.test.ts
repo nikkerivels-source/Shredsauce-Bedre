@@ -21,7 +21,9 @@ import { PRESETS, generateLevel } from '../src/game/levels.ts';
 import { cliffBand, jumpLine, jumpSpacing, ledgeDrop, spine } from '../src/game/design.ts';
 import { Session } from '../src/game/session.ts';
 import { LevelEditor } from '../src/game/editor.ts';
-import { defaultProfile, decodeLevelCode, encodeLevelCode } from '../src/game/storage.ts';
+import { defaultProfile, decodeLevelCode, encodeLevelCode, grantPass, passOwned } from '../src/game/storage.ts';
+import { PASS, SKINS, beginCheckout, gearUnlocked, passGear, passSkins, skinUnlocked } from '../src/game/pass.ts';
+import { GEAR_CATALOG } from '../src/physics/gear.ts';
 import { TUTORIAL_STEPS, Tutorial } from '../src/game/tutorial.ts';
 
 describe('level format', () => {
@@ -657,5 +659,75 @@ describe('backdrops and items', () => {
     expect(new Set(PROP_KINDS).size).toBe(PROP_KINDS.length);
     for (const kind of PROP_KINDS) expect(isPropKind(kind)).toBe(true);
     expect(isPropKind('spaceship')).toBe(false);
+  });
+});
+
+describe('season one', () => {
+  it('is a one-off purchase that is not owned by default', () => {
+    const profile = defaultProfile();
+    expect(passOwned(profile)).toBe(false);
+    expect(PASS.price).toBe(2.99);
+
+    grantPass(profile);
+    expect(passOwned(profile)).toBe(true);
+    const since = profile.pass?.since;
+    // Buying twice must not reset or double-charge anything.
+    grantPass(profile);
+    expect(profile.pass?.since).toBe(since);
+  });
+
+  it('unlocks every kit and ski at once, with no quest in between', () => {
+    const skins = passSkins();
+    const gear = passGear();
+    expect(skins.length).toBeGreaterThan(4);
+    expect(gear.length).toBeGreaterThan(3);
+
+    // Nothing is staged, tiered or conditional: ownership alone is the gate.
+    for (const skin of skins) {
+      expect(skinUnlocked(skin, false)).toBe(false);
+      expect(skinUnlocked(skin, true)).toBe(true);
+    }
+    for (const g of gear) {
+      expect(gearUnlocked(g, false)).toBe(false);
+      expect(gearUnlocked(g, true)).toBe(true);
+    }
+  });
+
+  it('leaves free players a working game', () => {
+    // Free kits and a rideable board and ski for each discipline must survive
+    // without the pass, or this stops being cosmetic and starts being a wall.
+    expect(SKINS.filter((s) => !s.pass).length).toBeGreaterThan(1);
+    for (const discipline of ['skis', 'snowboard'] as const) {
+      const free = GEAR_CATALOG.filter((g) => g.discipline === discipline && !g.pass && g.price === 0);
+      expect(free.length).toBeGreaterThan(0);
+    }
+  });
+
+  it('sells sidegrades rather than upgrades', () => {
+    // Every pass ski has to give something up against the best free gear in
+    // its discipline, or the pass is pay-to-win.
+    for (const g of passGear()) {
+      const rivals = GEAR_CATALOG.filter((r) => r.discipline === g.discipline && !r.pass);
+      const bestGlide = Math.min(...rivals.map((r) => r.glideFriction));
+      const bestPop = Math.max(...rivals.map((r) => r.pop));
+      const bestSwing = Math.min(...rivals.map((r) => r.swingWeight));
+      const dominant = g.glideFriction <= bestGlide && g.pop >= bestPop && g.swingWeight <= bestSwing;
+      expect(dominant).toBe(false);
+    }
+  });
+
+  it('does not pretend to charge when no provider is configured', () => {
+    // No VITE_CHECKOUT_URL in this build, so the button must decline rather
+    // than quietly hand the pass over.
+    const outcome = beginCheckout();
+    expect(outcome.kind).toBe('unconfigured');
+    const profile = defaultProfile();
+    expect(passOwned(profile)).toBe(false);
+  });
+
+  it('treats a malformed entitlement as unowned', () => {
+    for (const junk of [{ owned: 'yes' }, {}, { owned: false }, null, 'owned']) {
+      expect(passOwned({ ...defaultProfile(), pass: junk as never })).toBe(false);
+    }
   });
 });

@@ -9,7 +9,8 @@ snow, a layered range on the horizon, and one solid blue running through the
 interface.
 
 It runs on desktop and on a phone, from a single static build. There is no
-install, no account, and nothing to buy.
+install and no account. One optional pass sells kit and sidegrade equipment;
+every mountain, mode and editor feature is free.
 
 ```bash
 npm install
@@ -18,7 +19,7 @@ npm run server       # optional: live sessions on ws://localhost:8787
 ```
 
 ```bash
-npm test             # 70 unit tests (physics, tricks, level design, editor, replays)
+npm test             # 76 unit tests (physics, tricks, level design, editor, replays)
 npm run build        # typecheck + production bundle into dist/
 node scripts/smoke.mjs --shots   # drives the built game in a real browser
 ```
@@ -189,6 +190,34 @@ banners, start arches, safety netting, lift towers and chairs, cabins, tents,
 igloos, snowcats, snow guns, speakers, benches, fire pits, barrels and crates —
 each with a real mesh, picked from a palette that appears when you choose the
 item tool.
+
+### Season One is one payment and no homework
+
+$2.99, once, and every kit and every ski unlocks immediately. No tiers to climb,
+no daily quests, no season to miss, no second pass to buy later. Two rules keep
+it from poisoning the game:
+
+- **Nothing in it is required.** No mountain, mode or editor feature is behind
+  it. Kit and equipment only.
+- **Nothing in it is stronger.** Every pass ski trades something away — the
+  light one is nervous at speed, the stable one is heavy, the powder one is
+  vague on hardpack. A test asserts this: no pass ski may beat the best free
+  gear in its discipline on glide, pop *and* swing weight at once. A pass that
+  sells superiority makes the free game pointless, which is worse than not
+  selling one.
+
+**Payment is not connected.** The game has no server, so there is nothing to
+take a card, verify a receipt, or hold an account — and entitlement therefore
+lives in the same editable localStorage profile as everything else, which cannot
+be enforced. The pass screen says all of this on the page rather than after a
+click, and the buy button declines instead of quietly handing the pass over. A
+smoke check asserts both: that the disclosure is present, and that pressing buy
+grants nothing.
+
+The seam for a real one is `beginCheckout` in `src/game/pass.ts`. Point
+`VITE_CHECKOUT_URL` at a hosted checkout, and replace `consumeCheckoutReturn`'s
+query-parameter placeholder with a server-verified receipt before it records
+anything.
 
 ### Crashes are simulated too
 

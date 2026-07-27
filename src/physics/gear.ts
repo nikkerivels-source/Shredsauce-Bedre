@@ -38,6 +38,14 @@ export interface GearSpec {
   unlockLevel: number;
   price: number;
   description: string;
+  /**
+   * Comes with the pass rather than the credit economy.
+   *
+   * Pass gear is deliberately *different* rather than better — each one trades
+   * something away. A pass that hands out strictly superior equipment makes the
+   * free game pointless to play, which is a worse outcome than not selling one.
+   */
+  pass?: boolean;
 }
 
 export const GEAR_CATALOG: GearSpec[] = [
@@ -211,6 +219,110 @@ export const GEAR_CATALOG: GearSpec[] = [
     unlockLevel: 7,
     price: 1800,
     description: 'Fat rockered powder skis. Surfs anything soft.',
+  },
+  // --- Pass gear -----------------------------------------------------------
+  {
+    id: 'pass-filament-171',
+    name: 'Filament 171',
+    brandLine: 'Season One',
+    discipline: 'skis',
+    length: 1.71,
+    waistWidth: 0.086,
+    sidecutRadius: 16.5,
+    effectiveEdge: 1.36,
+    stiffness: 0.4,
+    camber: 'hybrid',
+    // Very light, so it swings fast and pops hard — and gets knocked about by
+    // anything rough at speed.
+    mass: 2.6,
+    glideFriction: 0.044,
+    pop: 1.24,
+    swingWeight: 0.8,
+    unlockLevel: 0,
+    price: 0,
+    pass: true,
+    description: 'Featherweight park twin. Spins like nothing else, nervous when it gets fast.',
+  },
+  {
+    id: 'pass-anvil-181',
+    name: 'Anvil 181',
+    brandLine: 'Season One',
+    discipline: 'skis',
+    length: 1.81,
+    waistWidth: 0.104,
+    sidecutRadius: 22,
+    effectiveEdge: 1.52,
+    stiffness: 0.88,
+    camber: 'camber',
+    // Heavy and stiff: unshakeable at speed, hard work everywhere else.
+    mass: 5.4,
+    glideFriction: 0.033,
+    pop: 0.86,
+    swingWeight: 1.32,
+    unlockLevel: 0,
+    price: 0,
+    pass: true,
+    description: 'Damp metal charger. Holds a line through anything, refuses to be hurried.',
+  },
+  {
+    id: 'pass-whiteout-190',
+    name: 'Whiteout 190',
+    brandLine: 'Season One',
+    discipline: 'skis',
+    length: 1.9,
+    waistWidth: 0.124,
+    sidecutRadius: 26,
+    effectiveEdge: 1.42,
+    stiffness: 0.6,
+    camber: 'rocker',
+    mass: 4.6,
+    glideFriction: 0.03,
+    pop: 0.9,
+    swingWeight: 1.28,
+    unlockLevel: 0,
+    price: 0,
+    pass: true,
+    description: 'Big-mountain float. Surfy and fast in deep snow, vague on hardpack.',
+  },
+  {
+    id: 'pass-cutlass-152',
+    name: 'Cutlass 152',
+    brandLine: 'Season One',
+    discipline: 'snowboard',
+    length: 1.52,
+    waistWidth: 0.246,
+    sidecutRadius: 6.8,
+    effectiveEdge: 1.12,
+    stiffness: 0.34,
+    camber: 'hybrid',
+    mass: 2.8,
+    glideFriction: 0.045,
+    pop: 1.12,
+    swingWeight: 0.86,
+    unlockLevel: 0,
+    price: 0,
+    pass: true,
+    description: 'Short and viciously tight. Turns inside anything, wanders on a straight.',
+  },
+  {
+    id: 'pass-meridian-160',
+    name: 'Meridian 160',
+    brandLine: 'Season One',
+    discipline: 'snowboard',
+    length: 1.6,
+    waistWidth: 0.256,
+    sidecutRadius: 8.8,
+    effectiveEdge: 1.24,
+    stiffness: 0.68,
+    camber: 'camber',
+    mass: 3.7,
+    glideFriction: 0.036,
+    pop: 1.06,
+    swingWeight: 1.1,
+    unlockLevel: 0,
+    price: 0,
+    pass: true,
+    description: 'Stiff directional all-mountain deck. Rewards a clean edge, punishes a lazy one.',
   },
 ];
 

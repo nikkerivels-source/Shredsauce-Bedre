@@ -3,6 +3,7 @@ import { MODE_LABELS, type GameMode, type SessionSummary } from '../game/session
 import { PRESETS, generateLevel } from '../game/levels.ts';
 import {
   bestScoreFor,
+  passOwned,
   deleteFromLibrary,
   decodeLevelCode,
   encodeLevelCode,
@@ -20,6 +21,16 @@ import { button, clear, colorField, el, formatScore, formatTime, segmented, slid
 import { wordmark } from './wordmark.ts';
 import { runStats, trailMap } from './trailmap.ts';
 import { formatBytes, readBackdropImage } from './image.ts';
+import {
+  PASS,
+  SKINS,
+  beginCheckout,
+  checkoutUrl,
+  passGear,
+  passSkins,
+  skinUnlocked,
+  type Skin,
+} from '../game/pass.ts';
 
 export type Screen =
   | 'main'
@@ -30,6 +41,7 @@ export type Screen =
   | 'editor'
   | 'replays'
   | 'multiplayer'
+  | 'pass'
   | 'pause'
   | 'none';
 
@@ -116,6 +128,9 @@ export class Shell {
       case 'multiplayer':
         this.body.append(this.buildMultiplayer());
         break;
+      case 'pass':
+        this.body.append(this.buildPass());
+        break;
       case 'pause':
         this.body.append(this.buildPause());
         break;
@@ -189,6 +204,7 @@ export class Shell {
             this.handlers.onOpenEditor(built);
           }),
           item('Garage', getGear(gear).name, () => this.show('gear')),
+          item('Season One', passOwned(this.profile) ? 'Owned' : `$${PASS.price.toFixed(2)}`, () => this.show('pass')),
           item('Replays', replays > 0 ? `${replays} saved` : '', () => this.show('replays')),
           item('Settings', '', () => this.show('settings')),
         ]),
@@ -313,20 +329,120 @@ export class Shell {
     ]);
   }
 
+  private wearSkin(skin: Skin): void {
+    this.profile.skinId = skin.id;
+    this.profile.appearance = { ...skin.appearance };
+    this.handlers.onProfileChanged();
+  }
+
+  /**
+   * Season One.
+   *
+   * One price, everything at once. The screen is deliberately blunt about what
+   * it is and is not — including that payment is not wired up in this build,
+   * which is the sort of thing a store page should say out loud rather than
+   * discover after a click.
+   */
+  private buildPass(): HTMLElement {
+    const owned = passOwned(this.profile);
+    const gear = passGear();
+    const skins = passSkins();
+
+    const skinRow = el('div', { class: 'skin-grid' });
+    for (const skin of skins) {
+      skinRow.append(
+        el('div', { class: 'skin showcase', title: skin.note }, [
+          swatch(skin),
+          el('span', { class: 'skin-name' }, [skin.name]),
+        ]),
+      );
+    }
+
+    const gearList = el('div', { class: 'pass-gear' });
+    for (const g of gear) {
+      gearList.append(
+        el('div', { class: 'pass-gear-row' }, [
+          el('div', {}, [
+            el('h4', {}, [g.name]),
+            el('p', {}, [g.description]),
+          ]),
+          el('span', { class: 'pass-gear-kind' }, [g.discipline === 'skis' ? 'Skis' : 'Board']),
+        ]),
+      );
+    }
+
+    const buy = owned
+      ? el('div', { class: 'pass-owned' }, [
+          el('strong', {}, ['Season One is yours.']),
+          el('p', {}, ['Every kit and every ski below is unlocked in the Garage.']),
+        ])
+      : el('div', { class: 'pass-buy' }, [
+          el('div', { class: 'pass-price' }, [
+            el('span', { class: 'pass-amount' }, [`$${PASS.price.toFixed(2)}`]),
+            el('span', { class: 'pass-once' }, ['once · yours forever']),
+          ]),
+          button(`Buy ${PASS.name}`, () => this.startCheckout(), 'btn'),
+          checkoutUrl()
+            ? null
+            : el('p', { class: 'pass-warning' }, [
+                'Payment is not connected in this build — there is no server behind it yet, so nothing can be charged. The pass is built and ready; wiring a checkout provider is the remaining step.',
+              ]),
+        ]);
+
+    return el('div', { class: 'screen pass-screen' }, [
+      this.backBar(),
+      el('div', { class: 'pass-head' }, [
+        el('span', { class: 'pass-eyebrow' }, ['Season One']),
+        el('h1', {}, ['Everything, at once']),
+        el('p', { class: 'subtitle' }, [PASS.tagline]),
+      ]),
+      buy,
+      el('div', { class: 'pass-terms' }, [
+        passTerm('One payment', 'Not a subscription. There is no second season to buy.'),
+        passTerm('No quests', 'Nothing to grind. Every item unlocks the moment you own it.'),
+        passTerm('No expiry', 'It does not end, and nothing in it is ever removed.'),
+        passTerm('Nothing gated', 'No mountain, mode or editor feature is behind it. Kit and sidegrades only.'),
+      ]),
+      el('h3', { class: 'list-heading' }, [`${skins.length} kits`]),
+      skinRow,
+      el('h3', { class: 'list-heading' }, [`${gear.length} skis and boards`]),
+      gearList,
+      el('p', { class: 'help' }, [
+        'None of this gear is stronger than what you can earn — each one trades something away. The light ski is nervous at speed, the stable one is heavy, the powder one is vague on hardpack.',
+      ]),
+      el('p', { class: 'help' }, [
+        'Ownership is stored on this device only, so clearing site data for this site loses it.',
+      ]),
+    ]);
+  }
+
+  private startCheckout(): void {
+    const outcome = beginCheckout();
+    if (outcome.kind === 'redirect') {
+      window.location.href = outcome.url;
+      return;
+    }
+    this.toast('No payment provider is connected yet — nothing was charged.');
+  }
+
   private buildGear(): HTMLElement {
     const riderLevel = levelFromXp(this.profile.xp);
+    const hasPass = passOwned(this.profile);
     const grid = el('div', { class: 'gear-grid' });
 
     const renderGear = () => {
       clear(grid);
       for (const gear of gearForDiscipline(this.profile.discipline)) {
-        const owned = this.profile.ownedGear.includes(gear.id);
-        const locked = riderLevel < gear.unlockLevel;
+        const inPass = gear.pass === true;
+        // Pass gear is not bought with credits and does not unlock by level;
+        // it arrives with the pass or not at all.
+        const owned = inPass ? hasPass : this.profile.ownedGear.includes(gear.id);
+        const locked = inPass ? !hasPass : riderLevel < gear.unlockLevel;
         const equipped =
           gear.id === (this.profile.discipline === 'skis' ? this.profile.skiId : this.profile.boardId);
         grid.append(
           el('div', { class: `gear-card${equipped ? ' equipped' : ''}${locked ? ' locked' : ''}` }, [
-            el('h4', {}, [gear.name]),
+            el('h4', {}, [gear.name, gear.pass ? el('span', { class: 'pass-tag' }, ['Pass']) : null]),
             el('div', { class: 'gear-brand' }, [gear.brandLine]),
             el('p', {}, [gear.description]),
             el('div', { class: 'spec-grid' }, [
@@ -338,7 +454,12 @@ export class Shell {
               spec('Swing', `${gear.swingWeight.toFixed(2)}x`),
             ]),
             locked
-              ? el('div', { class: 'locked-note' }, [`Unlocks at level ${gear.unlockLevel}`])
+              ? inPass
+                ? el('div', { class: 'locked-note pass-note' }, [
+                    'Season One',
+                    button('View pass', () => this.show('pass'), 'btn tiny'),
+                  ])
+                : el('div', { class: 'locked-note' }, [`Unlocks at level ${gear.unlockLevel}`])
               : owned
                 ? equipped
                   ? el('div', { class: 'equipped-note' }, ['Equipped'])
@@ -362,8 +483,39 @@ export class Shell {
     };
     renderGear();
 
+    const skins = el('div', { class: 'skin-grid' });
+    const renderSkins = () => {
+      clear(skins);
+      for (const skin of SKINS) {
+        const unlocked = skinUnlocked(skin, hasPass);
+        const worn = this.profile.skinId === skin.id;
+        skins.append(
+          el('button', {
+            class: `skin${worn ? ' worn' : ''}${unlocked ? '' : ' locked'}`,
+            type: 'button',
+            title: unlocked ? skin.note : 'Comes with Season One',
+            onclick: () => {
+              if (!unlocked) {
+                this.show('pass');
+                return;
+              }
+              this.wearSkin(skin);
+              renderSkins();
+            },
+          }, [
+            swatch(skin),
+            el('span', { class: 'skin-name' }, [skin.name]),
+            skin.pass ? el('span', { class: 'pass-tag' }, ['Pass']) : null,
+          ]),
+        );
+      }
+    };
+    renderSkins();
+
     const appearance = el('div', { class: 'appearance' }, [
-      el('h3', {}, ['Look']),
+      el('h3', {}, ['Kit']),
+      skins,
+      el('p', { class: 'help' }, ['Pick a kit, or mix your own below.']),
       colorField('Jacket', this.profile.appearance.jacket, (v) => this.setColor('jacket', v)),
       colorField('Pants', this.profile.appearance.pants, (v) => this.setColor('pants', v)),
       colorField('Helmet', this.profile.appearance.helmet, (v) => this.setColor('helmet', v)),
@@ -1037,6 +1189,23 @@ function pisteMark(difficulty: string): HTMLElement {
     { class: `piste ${variant}`.trim(), title: difficulty },
     Array.from({ length: pips }, () => el('i', {})),
   );
+}
+
+/** Four colour chips off a kit, so it reads at a glance. */
+function swatch(skin: Skin): HTMLElement {
+  return el('span', { class: 'swatch' }, [
+    el('i', { style: `background:${skin.appearance.jacket}` }),
+    el('i', { style: `background:${skin.appearance.pants}` }),
+    el('i', { style: `background:${skin.appearance.helmet}` }),
+    el('i', { style: `background:${skin.appearance.board}` }),
+  ]);
+}
+
+function passTerm(title: string, body: string): HTMLElement {
+  return el('div', { class: 'pass-term' }, [
+    el('strong', {}, [title]),
+    el('span', {}, [body]),
+  ]);
 }
 
 /** Turns a camelCase item id into something readable. */

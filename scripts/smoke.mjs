@@ -159,6 +159,27 @@ try {
   await page.getByRole('button', { name: 'Quit to menu' }).click();
   await page.waitForSelector('.wordmark', { timeout: 8000 });
 
+  // Season One: the store page must render and must not charge or grant
+  // anything with no payment provider configured.
+  await page.getByRole('button', { name: 'Season One', exact: false }).first().click();
+  await page.waitForSelector('.pass-screen', { timeout: 8000 });
+  const price = await page.locator('.pass-amount').textContent();
+  const kits = await page.locator('.pass-screen .skin').count();
+  console.log(`✓ pass screen — ${price}, ${kits} kits`);
+  if (price?.trim() !== '$2.99') failures.push(`pass price shown as ${price}`);
+  const warned = await page.locator('.pass-warning').count();
+  if (warned !== 1) failures.push('pass screen did not disclose that payment is not connected');
+  if (wantShots) await page.screenshot({ path: join(shotDir, 'shot-pass.png') });
+  await page.getByRole('button', { name: 'Buy Season One' }).click();
+  await page.waitForTimeout(400);
+  const granted = await page.evaluate(() => {
+    const raw = localStorage.getItem('bluebird.profile.v1');
+    return raw ? JSON.parse(raw)?.pass?.owned === true : false;
+  });
+  if (granted) failures.push('buy button granted the pass with no payment taken');
+  await page.getByRole('button', { name: 'Back' }).click();
+  await page.waitForSelector('.wordmark', { timeout: 8000 });
+
   // Editor.
   await page.getByRole('button', { name: 'Build', exact: false }).first().click();
   await page.waitForSelector('.editor-panel', { timeout: 15000 });

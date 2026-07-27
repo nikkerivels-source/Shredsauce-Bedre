@@ -7,12 +7,14 @@ import { AudioEngine } from './game/audio.ts';
 import { Tutorial } from './game/tutorial.ts';
 import { buildPreset } from './game/levels.ts';
 import {
+  grantPass,
   loadProfile,
   recordScore,
   saveProfile,
   saveToLibrary,
   type Profile,
 } from './game/storage.ts';
+import { consumeCheckoutReturn } from './game/pass.ts';
 import { ReplayPlayer, makeReplaySample, saveReplay, type Replay, type ReplaySample } from './game/replay.ts';
 import { getGear } from './physics/gear.ts';
 import { makePose, poseFromRider, type RiderPose } from './physics/ragdoll.ts';
@@ -65,6 +67,12 @@ class App {
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
     this.profile = loadProfile();
+    // If a hosted checkout was configured and sent the player back, record it.
+    // With no provider configured this is a no-op — see pass.ts.
+    if (consumeCheckoutReturn()) {
+      grantPass(this.profile);
+      saveProfile(this.profile);
+    }
 
     const level = buildPreset('home-park');
     this.session = new Session(level, this.profile);
