@@ -219,6 +219,51 @@ The seam for a real one is `beginCheckout` in `src/game/pass.ts`. Point
 query-parameter placeholder with a server-verified receipt before it records
 anything.
 
+### The mountains behind the mountain
+
+The horizon used to be a flat white ribbon. Getting it to read as terrain meant
+finding three bugs that had been hiding each other, and none of them were in the
+noise.
+
+**The range was being backface-culled.** It is an open annulus and the camera
+lives inside it, so the entire near wall faced away and was thrown out — which
+showed as sky between the terrain and the peaks, and as torn shards wherever a
+face happened to tip toward the viewer. Painting the whole range bright green
+and *still* seeing a white skyline is what finally proved the mesh on screen was
+not the mesh being coloured. It is a landscape, not a closed solid, so it draws
+both sides.
+
+**Fog ramped linearly to whiteout.** A level with a mild 0.2 fog and a little
+snowfall was landing at a density that is 98% opaque two kilometres out — enough
+to dissolve the range entirely, no matter what colour it was. Visibility is
+multiplicative, so the control is now exponential, and the clear-day floor came
+down by half again. It buys nothing nearby either way: at two hundred metres
+both settings contribute under one percent.
+
+**The valley apron stood in front of it.** The skirt beyond the run fell at nine
+degrees for nine hundred metres, which is a plain, not a mountainside — so it
+sat between the rider and the range and hid it. It falls properly now, and the
+range starts closer, where the air is still clear.
+
+With those out of the way the shape work shows: a broad massif field deciding
+where the big mountains are, ridged detail folded about zero for the crests, and
+rock keyed to altitude rather than steepness — because all anyone ever sees of a
+range is its crests, and those are the part the wind scours bare. Octave counts
+are capped by the column count rather than by taste: a fourth octave lands near
+Nyquist at 220 columns and turns the skyline into a comb of identical spikes.
+
+The snow itself gained the thing that most says *snow*: **blue shade**. A face
+turned from the sun is lit only by the sky, and PBR alone renders that grey,
+which is why untinted snow looks like paper. It also gained rock above about
+fifty degrees — cliff bands, cut ledges, the valley wall — and sastrugi, the
+wind texture that stops an open face reading as a bedsheet.
+
+One number is deliberately unphysical. Rock albedo is set far darker than stone
+actually is, because the scene runs a bright sun into ACES tone mapping and a
+sensible 0.35 came out of the pipeline at 77% grey — near enough to snow's 94%
+that the skyline read as white anyway. Working back from the wanted output beat
+working forward from the material.
+
 ### It has to run on a phone
 
 That claim is load-bearing, so two things are held to it.

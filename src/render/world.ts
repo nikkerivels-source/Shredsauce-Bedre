@@ -25,6 +25,7 @@ export function createSnowMaterial(level: LevelDef): THREE.MeshStandardMaterial 
     uGroomed: { value: level.snow.groomed ? 1 : 0 },
     uHardness: { value: level.snow.hardness },
     uTime: { value: 0 },
+    uSunDir: { value: new THREE.Vector3(0.4, 0.7, 0.5).normalize() },
   };
 
   material.onBeforeCompile = (shader) => {
@@ -50,6 +51,7 @@ export function createSnowMaterial(level: LevelDef): THREE.MeshStandardMaterial 
          uniform float uGroomed;
          uniform float uHardness;
          uniform float uTime;
+         uniform vec3 uSunDir;
          varying vec3 vWorldPos;
          varying vec3 vWorldNormal;
 
@@ -57,16 +59,55 @@ export function createSnowMaterial(level: LevelDef): THREE.MeshStandardMaterial 
            p = fract(p * vec2(123.34, 456.21));
            p += dot(p, p + 45.32);
            return fract(p.x * p.y);
+         }
+
+         float valueNoise(vec2 p) {
+           vec2 i = floor(p);
+           vec2 f = fract(p);
+           f = f * f * (3.0 - 2.0 * f);
+           float a = hash21(i);
+           float b = hash21(i + vec2(1.0, 0.0));
+           float c = hash21(i + vec2(0.0, 1.0));
+           float d = hash21(i + vec2(1.0, 1.0));
+           return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+         }
+
+         float fbm(vec2 p) {
+           float v = 0.0;
+           float amp = 0.5;
+           for (int i = 0; i < 4; i++) {
+             v += valueNoise(p) * amp;
+             p *= 2.03;
+             amp *= 0.5;
+           }
+           return v;
          }`,
       )
       .replace(
         '#include <color_fragment>',
         `#include <color_fragment>
-         float slope = 1.0 - clamp(vWorldNormal.y, 0.0, 1.0);
+         vec3 wn = normalize(vWorldNormal);
+         float slope = 1.0 - clamp(wn.y, 0.0, 1.0);
 
          // Steep, wind-scoured pitches lose their loose snow and go blue.
          vec3 iceTint = vec3(0.82, 0.88, 0.97);
          diffuseColor.rgb = mix(diffuseColor.rgb, iceTint, smoothstep(0.16, 0.62, slope) * (0.28 + uHardness * 0.3));
+
+         // Rock. Snow does not hold past about fifty degrees, so anything
+         // steeper than that is stone — which on this terrain means cliff
+         // bands, the cut faces of an urban ledge, and the skirt falling away
+         // to the valley. A slope you can ski never reaches it.
+         float rockPatch = fbm(vWorldPos.xz * 0.055);
+         float rockMask = smoothstep(0.52, 0.80, slope + rockPatch * 0.22 - 0.11);
+         vec3 rock = vec3(0.27, 0.27, 0.30) * (0.72 + rockPatch * 0.6);
+         diffuseColor.rgb = mix(diffuseColor.rgb, rock, rockMask * 0.92);
+
+         // Wind texture. Sastrugi run across the prevailing wind and are what
+         // stops an open face reading as a bedsheet; they fade out where the
+         // groomer has been.
+         float sastrugi = fbm(vWorldPos.xz * vec2(0.42, 0.11) + 3.7);
+         float exposed = (1.0 - uGroomed) * (1.0 - rockMask);
+         diffuseColor.rgb *= mix(1.0, 0.945 + sastrugi * 0.11, exposed * (0.35 + uHardness * 0.5));
 
          // Corduroy: fine ridges left by the groomer, across the fall line.
          float cord = sin(vWorldPos.z * 7.5) * 0.5 + 0.5;
@@ -81,8 +122,21 @@ export function createSnowMaterial(level: LevelDef): THREE.MeshStandardMaterial 
          float sparkle = pow(grain, 110.0) * 0.75 * sparkleFade;
          diffuseColor.rgb += sparkle * (0.35 + uHardness * 0.4);
 
-         // Keep snow reading as snow rather than as a tinted surface.
-         diffuseColor.rgb = mix(diffuseColor.rgb, vec3(1.0), 0.2);`,
+         // Blue shade.
+         //
+         // The single most recognisable thing about snow is that its shadows
+         // are blue: a face turned away from the sun is lit only by the sky,
+         // and the sky is blue. PBR alone gives grey shade here, which is why
+         // untinted snow looks like paper. Biasing the albedo by how much the
+         // surface faces the sun puts that back.
+         float sunFacing = clamp(dot(wn, uSunDir), 0.0, 1.0);
+         vec3 shadeTint = vec3(0.70, 0.79, 0.96);
+         float shaded = 1.0 - smoothstep(0.0, 0.42, sunFacing);
+         diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * shadeTint, shaded * (1.0 - rockMask * 0.6));
+
+         // Keep snow reading as snow rather than as a tinted surface — but not
+         // over rock, which is supposed to be dark.
+         diffuseColor.rgb = mix(diffuseColor.rgb, vec3(1.0), 0.2 * (1.0 - rockMask));`,
       );
   };
 
@@ -412,8 +466,26 @@ export function createSky(scene: THREE.Scene, level: LevelDef): SkyRig {
       ambient.color.copy(uniforms.uTopColor.value).lerp(WHITE, 0.68);
       ambient.groundColor.set(0xeef3fa);
 
+      // Aerial perspective, and the only source of it — the range bakes no
+      // distance wash of its own, because stacking the two turned every peak
+      // white and erased the rock before anyone saw it.
+      //
+      // The clear-day floor used to be 0.00035, which is a 54% wash at two
+      // kilometres. Real visibility on a bluebird day is tens of kilometres,
+      // and the range lives between 1.3 and 3.9 km out, so that density was
+      // dissolving the entire skyline into the sky. It also bought nothing
+      // nearby: at two hundred metres it contributes under one percent either
+      // way. Overcast and snowfall still stack it up to a genuine whiteout.
       const fogColor = uniforms.uHorizonColor.value.clone().lerp(WHITE, 0.35 + w.cloud * 0.35);
-      const density = lerp(0.00035, 0.0035, clamp01(w.fog * 0.7 + w.cloud * 0.3 + w.snowfall * 0.35));
+      //
+      // The ramp is exponential, not linear. Linearly interpolating to the
+      // whiteout value put a level with a mild 0.2 fog and a little snow at
+      // 0.001 — which is 98% opacity two kilometres out, enough to dissolve
+      // the entire mountain range into flat white. Painting the range bright
+      // green and still seeing a white skyline is what finally showed it.
+      // Visibility is a multiplicative quantity, so the control should be too.
+      const murk = clamp01(w.fog * 0.75 + w.cloud * 0.16 + w.snowfall * 0.3);
+      const density = 0.00016 * Math.pow(22, murk);
       scene.fog = new THREE.FogExp2(fogColor.getHex(), density);
     },
   };
@@ -461,7 +533,13 @@ function skirtDrop(field: Heightfield, x: number, z: number): number {
   // Distance beyond the level boundary, measured as a rectangle not a circle.
   const outX = Math.max(0, Math.abs(x - cx) - halfX);
   const outZ = Math.max(0, Math.abs(z - cz) - halfZ);
-  return Math.hypot(outX, outZ) * 0.16;
+  // Steep, because this is a valley wall and not a plain. At the old 0.16 —
+  // about nine degrees — the apron stayed so high for so far that it stood in
+  // front of the mountain range and hid it: painting the range bright red
+  // showed only a couple of slivers at the frame edges, with the entire white
+  // skyline turning out to be this. A real piste has ground falling away below
+  // it and peaks rising behind that, which needs the fall to be a fall.
+  return Math.hypot(outX, outZ) * 0.38;
 }
 
 /**
@@ -473,7 +551,7 @@ function skirtDrop(field: Heightfield, x: number, z: number): number {
  * the mountain range, and because it is welded to the terrain's own edge heights
  * it can never open a seam.
  */
-export function buildTerrainSkirt(field: Heightfield, material: THREE.Material, reach = 900): THREE.Mesh {
+export function buildTerrainSkirt(field: Heightfield, material: THREE.Material, reach = 700): THREE.Mesh {
   const step = Math.max(1, Math.floor(8 / field.resolution));
   const loop: Array<{ x: number; z: number; y: number }> = [];
   const push = (ix: number, iz: number) => {
@@ -564,6 +642,11 @@ const RIDGE = new THREE.MeshStandardMaterial({
   metalness: 0,
   flatShading: true,
   vertexColors: true,
+  // The range is an open surface and the camera lives inside the annulus, so
+  // the whole near wall faces away and is culled — which shows as sky between
+  // the terrain and the peaks, and as torn shards where a face happens to tip
+  // toward the viewer. It is a landscape, not a closed solid; draw both sides.
+  side: THREE.DoubleSide,
 });
 
 /**
@@ -586,45 +669,78 @@ export function buildMountainRange(level: LevelDef, field: Heightfield): THREE.G
   const centreX = 0;
   const centreZ = level.terrain.length * 0.5;
   const span = Math.max(level.terrain.width, level.terrain.length);
-  const inner = span * 1.0;
-  const outer = span * 4.0;
-  // Tall enough that the crests sit well above the rider's eye line for the
-  // whole descent. The inner rim is anchored to ground that has already fallen
-  // several hundred metres by the time it gets out here, so a range scaled to
-  // the drop alone ends up *below* the camera and you look down onto it.
-  const maxHeight = 780;
+  // Pulled in from one-to-four spans. Relief four spans out subtends almost
+  // nothing, and worse, it sits deep enough in the haze that no amount of rock
+  // survives the fog. Closer is both bigger and clearer.
+  const inner = span * 0.85;
+  const outer = span * 2.0;
+  // Real alpine relief above a valley floor is 1500-2500 m, and it has to be:
+  // the inner rim is anchored to ground that has already fallen several hundred
+  // metres by the time it gets out here, so a range scaled to the drop alone
+  // ends up below the camera and you look down onto it. At 780 m over three
+  // kilometres the crests subtended about ten degrees and read as a ribbon.
+  const maxHeight = 1150;
 
-  const rings = 26;
-  const cols = 144;
+  const rings = 34;
+  const cols = 220;
   const vertexCount = (cols + 1) * (rings + 1);
   const positions = new Float32Array(vertexCount * 3);
   const colors = new Float32Array(vertexCount * 3);
+
+  /**
+   * Height of the range at a point on the annulus.
+   *
+   * Two scales, because a real range is not one noise field: a broad massif
+   * that decides where the big mountains are, and ridged detail folded about
+   * zero on top of it for the crests. Sampling in both angle and radius puts
+   * peaks at different distances, which is where the layered look comes from.
+   */
+  const shapeAt = (a: number, rt: number): number => {
+    const cos = Math.cos(a);
+    const sin = Math.sin(a);
+    // fbm2D is signed, so the massif is remapped to 0..1 before it is used as
+    // an amplitude. Left signed it drives the whole term negative across half
+    // the ring and the skyline collapses into floating slivers.
+    // Octave counts are limited by the column count, not by taste. At 220
+    // columns around the ring, a fourth octave of a field based at cos*2.4
+    // lands near Nyquist: adjacent columns alternate high and low and the
+    // skyline comes out as a comb of identical spikes rather than ridgelines.
+    // The radial offsets are small for the same reason — shifting the field
+    // hard between rings makes neighbouring rings disagree, and the surface
+    // between them fans into triangles.
+    const massif = fbm2D(cos * 1.15 + rt * 0.8, sin * 1.15, level.seed + 4021, 3) * 0.5 + 0.5;
+    const ridged = 1 - Math.abs(fbm2D(cos * 2.4 + rt * 0.7, sin * 2.4, level.seed + 11, 3));
+    const fine = 1 - Math.abs(fbm2D(cos * 5.0 + rt * 1.0, sin * 5.0, level.seed + 907, 2));
+    const grain = fbm2D(cos * 8.5 + rt * 1.6, sin * 8.5, level.seed + 331, 2);
+    // The floor matters as much as the peaks: a skyline that dips to nothing
+    // shows strips of sky under the range.
+    return 0.50 + (0.44 + massif * 0.5) * (ridged * 0.48 + fine * 0.06) + grain * 0.018;
+  };
+
+  /**
+   * The envelope climbs the whole way out and never comes back down — a range
+   * that dips between rings shows strips of sky under the skyline. The exponent
+   * decides *where* the big peaks are, and it has to do two jobs at once. Too
+   * high and the height is still climbing at the outer ring, so everything tall
+   * is kilometres away and reads as a ribbon. Too low near the rim and the far
+   * valley wall does not rise fast enough to close the gap the skirt leaves
+   * when it falls away, and the range appears to float with sky beneath it.
+   */
+  const envelopeAt = (rt: number): number => Math.pow(rt, 0.34);
 
   for (let ri = 0; ri <= rings; ri++) {
     const rt = ri / rings;
     // Radius grows geometrically so the near ridges get the vertex density and
     // the far haze does not waste triangles.
     const radius = inner * Math.pow(outer / inner, rt);
-    // The envelope climbs the whole way out and never comes back down. A range
-    // that dips between ridges shows strips of sky under the skyline, which
-    // reads as water floating above the horizon.
-    const envelope = Math.pow(rt, 0.62);
 
     for (let ci = 0; ci <= cols; ci++) {
       const a = (ci / cols) * Math.PI * 2;
       const cos = Math.cos(a);
       const sin = Math.sin(a);
 
-      // Ridged noise — folding the field about zero turns rounded hills into
-      // sharp crests, which is what makes a skyline read as mountains rather
-      // than dunes. Sampling in both angle and radius puts peaks at different
-      // distances, which is where the layered look comes from.
-      const n = fbm2D(cos * 2.4 + rt * 1.7, sin * 2.4, level.seed + 11, 4);
-      const ridged = 1 - Math.abs(n);
-      const detail = fbm2D(cos * 8.5 + rt * 5, sin * 8.5, level.seed + 907, 3);
-      const shape = 0.3 + ridged * 0.82 + detail * 0.16;
-      const h = maxHeight * envelope * shape;
-
+      const shape = shapeAt(a, rt);
+      const h = maxHeight * envelopeAt(rt) * shape;
       const i = ri * (cols + 1) + ci;
       const wx = centreX + cos * radius;
       const wz = centreZ + sin * radius;
@@ -637,11 +753,50 @@ export function buildMountainRange(level: LevelDef, field: Heightfield): THREE.G
       positions[i * 3 + 1] = anchor + h;
       positions[i * 3 + 2] = wz;
 
-      // Faint blue in the hollows, bright white on the crests.
-      const shade = 0.84 + clamp01(shape / 1.2) * 0.16;
-      colors[i * 3] = shade * 0.96;
-      colors[i * 3 + 1] = shade * 0.985;
-      colors[i * 3 + 2] = 1;
+      // Steepness of the *shape*, not of the metres.
+      //
+      // Each ring sits at a different radius, so a gradient measured in metres
+      // per metre is an order of magnitude larger on the outer ring than the
+      // inner one — thresholding that puts rock on the whole far range and none
+      // on the near one. Differentiating the unit shape field instead is
+      // scale-free, and it is the shape that decides where snow can sit.
+      const da = (Math.PI * 2) / cols;
+      const dr = 1 / rings;
+      const gradA = (shapeAt(a + da, rt) - shapeAt(a - da, rt)) / (2 * da);
+      const gradR = (shapeAt(a, Math.min(1, rt + dr)) - shapeAt(a, Math.max(0, rt - dr))) / (2 * dr);
+      const steep = Math.hypot(gradA * 0.4, gradR * 0.22);
+
+      // Altitude matters more than steepness here, and it took a probe to see
+      // why. Rock was firing on 30% of the vertices — but only on the flanks,
+      // and the flanks are exactly the part hidden behind the ring in front of
+      // them. All anyone ever sees of a range is its crests. Those are also the
+      // rockiest part of a real skyline, because the wind scours the summit
+      // ridges bare while snow sits on the gentler ground below.
+      const alt = clamp01((shape - 0.86) / 0.17);
+      // Patchy, so the snowline is broken up rather than a clean contour.
+      const patch = fbm2D(cos * 11 + rt * 6, sin * 11, level.seed + 5501, 3);
+      const rock = clamp01((steep * 0.5 + alt * 0.85 - 0.28 + patch * 0.2) / 0.6);
+
+      // Rock is a cool dark grey; the sunward side of a face is much lighter
+      // than the shaded side, which is the other half of reading as stone.
+      //
+      // These numbers are much lower than a rock albedo has any right to be,
+      // and deliberately. The scene runs a bright sun into ACES tone mapping,
+      // which compresses the top of the range hard: a physically sensible 0.35
+      // rock came out of the pipeline at about 77% grey, near enough to snow's
+      // 94% that the whole skyline read as white. Working back from the wanted
+      // output rather than forward from the material is what gets stone.
+      const facing = clamp01(0.5 + gradA * 0.55);
+      const rockShade = 0.07 + facing * 0.17;
+      const snowShade = 0.9 + clamp01(h / maxHeight) * 0.1;
+
+      // Aerial perspective is the scene's exponential fog, and only that.
+      // Baking a second distance wash into the vertex colours here stacked on
+      // top of it and turned the whole range white — the rock was being
+      // computed correctly and then erased twice over.
+      colors[i * 3] = lerp(snowShade * 0.97, rockShade * 1.02, rock);
+      colors[i * 3 + 1] = lerp(snowShade * 0.99, rockShade * 1.0, rock);
+      colors[i * 3 + 2] = lerp(snowShade * 1.0, rockShade * 1.06, rock);
     }
   }
 
@@ -1252,7 +1407,24 @@ export function disposeObject(root: THREE.Object3D): void {
   root.parent?.remove(root);
 }
 
-const SHARED_MATERIALS = new Set<THREE.Material>([METAL, CONCRETE, WOOD, FLAG, TRUNK, NEEDLE, SNOWCAP, RIDGE, ROCK]);
+// Materials shared between levels must never be disposed with the objects that
+// happen to use them, or the next level draws with a dead program.
+const SHARED_MATERIALS = new Set<THREE.Material>([
+  METAL,
+  CONCRETE,
+  WOOD,
+  FLAG,
+  TRUNK,
+  NEEDLE,
+  SNOWCAP,
+  RIDGE,
+  ROCK,
+  PAINT,
+  DARK,
+  GLASS,
+  NET,
+  EMBER,
+]);
 
 export function clampLevelCamera(field: Heightfield, pos: THREE.Vector3, minAbove = 1.2): void {
   const ground = field.heightAt(pos.x, pos.z);

@@ -217,6 +217,7 @@ export class WorldView {
     if (!this.sky) this.sky = createSky(this.scene, level);
     else this.sky.update(level);
     setRangeVisibility(this.range, level.backdrop);
+    this.syncSnowLight();
 
     if (this.snowfall) this.scene.remove(this.snowfall.points);
     this.snowfall = new Snowfall(level);
@@ -241,8 +242,20 @@ export class WorldView {
         u.uHardness.value = level.snow.hardness;
       }
     }
+    this.syncSnowLight();
     const rad = level.weather.windDirection * DEG;
     this.wind.set(Math.sin(rad) * level.weather.wind, 0, Math.cos(rad) * level.weather.wind);
+  }
+
+  /**
+   * Hands the snow shader the sun direction.
+   *
+   * It needs it to know which faces are in shade, and the sun moves with the
+   * level's time of day — so this runs wherever the sky does, not once.
+   */
+  private syncSnowLight(): void {
+    const u = this.snowMaterial?.userData.uniforms;
+    if (u?.uSunDir && this.sky) u.uSunDir.value.copy(this.sky.direction);
   }
 
   setRider(gear: GearSpec, appearance: RiderAppearance): RiderMesh {
