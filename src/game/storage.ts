@@ -28,7 +28,8 @@ export interface Profile {
 export function defaultProfile(): Profile {
   return {
     name: 'rider',
-    discipline: 'snowboard',
+    // It is a freeski game first. Snowboard is a choice, not the default.
+    discipline: 'skis',
     goofy: false,
     boardId: 'park-155',
     skiId: 'twin-172',

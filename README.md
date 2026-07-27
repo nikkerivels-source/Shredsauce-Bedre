@@ -1,7 +1,7 @@
 # Bluebird
 
-Freestyle skiing and snowboarding for the browser, built on a real carving and
-aerial simulation rather than a scripted one.
+A freeski game for the browser, built on a real carving and aerial simulation
+rather than a scripted one. Snowboard is there too, as a choice.
 
 *Bluebird* is what riders call a clear, cold, blue-sky day after a storm — the
 one you wait all season for. The whole game is built around that light: pale
@@ -115,7 +115,7 @@ and spin you were carrying. A crash out of a corked 900 keeps tumbling like one.
 | **Level editor** | Terrain sculpting, ten feature types, live weather and snow, undo/redo |
 | **Sharing** | Levels compress to a paste-able share code (deflate + base64url) |
 | **Game modes** | Free ride, jam session, time attack, challenges |
-| **9 boards and skis** | Real sidecut, waist, flex, camber profile and swing weight |
+| **5 skis, 5 boards** | Real sidecut, waist, flex, camber profile and swing weight |
 | **24 grabs** | Indy through method, japan, roast beef, octograb, genie |
 | **Tricks** | Spins, flips, corks, rodeos, mistys, bios, flatspins, switch and cab naming |
 | **Rails** | 50-50, boardslide, lipslide, nose/tail slide, presses, on round bars, flat bars, kinks and boxes |
@@ -126,6 +126,11 @@ and spin you were carrying. A crash out of a corked 900 keeps tumbling like one.
 | **Sound** | Fully synthesised — wind, edge, spray, rails, impacts, crashes |
 
 ### Look
+
+**The rider** is a freeskier: two skis with their own sidecut and twin-tip
+rocker, poles with grips and baskets held at the hands and trailed back, an
+oversized shell whose hem hangs past the hips, and rigid boot shells. The
+outerwear is deliberately baggy — those radii are the clothing, not the body.
 
 **The world** is bright and low-poly on purpose: near-white snow with groomer
 corduroy, conifers that read as black silhouettes against it, poured-concrete

@@ -11,13 +11,14 @@ export interface RiderAppearance {
   skin: string;
 }
 
+/** Freeski default: dark baggy shell over bright pants. */
 export function defaultAppearance(): RiderAppearance {
   return {
-    jacket: '#e8503a',
-    pants: '#22262e',
-    helmet: '#f4f6fa',
-    goggles: '#1b1f28',
-    board: '#2f8fd6',
+    jacket: '#23272f',
+    pants: '#e0622a',
+    helmet: '#1a1d23',
+    goggles: '#101318',
+    board: '#3f97e0',
     skin: '#c99b76',
   };
 }
@@ -31,53 +32,55 @@ interface LimbSpec {
   from: number;
   to: number;
   key: keyof RiderAppearance;
-  /** Squashes the limb across the board axis so it is not a perfect tube. */
+  /** Squashes the limb across its depth so it is not a perfect tube. */
   flatten?: number;
 }
 
 /**
- * Limbs, tapered.
+ * Limbs.
  *
- * Real limbs are not uniform tubes: a thigh is much thicker at the hip than at
- * the knee, and a jacket sleeve is thicker than the forearm inside it. Tapering
- * each segment and flattening the torso across its depth is most of what turns a
- * stack of capsules into something that reads as a person.
+ * Freeski outerwear is deliberately oversized — a shell two sizes too big, pants
+ * that stack over the boot. So these radii are the *clothing*, not the body, and
+ * they are far thicker than anatomy would suggest. Getting that wrong is what
+ * makes a rider read as a generic mannequin instead of a skier.
  */
 const LIMBS: LimbSpec[] = [
-  { a: J.pelvis, b: J.chest, from: 0.15, to: 0.185, key: 'jacket', flatten: 0.74 },
-  { a: J.chest, b: J.neck, from: 0.135, to: 0.085, key: 'jacket' },
-  { a: J.chest, b: J.shoulderL, from: 0.1, to: 0.088, key: 'jacket' },
-  { a: J.chest, b: J.shoulderR, from: 0.1, to: 0.088, key: 'jacket' },
-  { a: J.shoulderL, b: J.elbowL, from: 0.077, to: 0.058, key: 'jacket' },
-  { a: J.shoulderR, b: J.elbowR, from: 0.077, to: 0.058, key: 'jacket' },
-  { a: J.elbowL, b: J.handL, from: 0.055, to: 0.042, key: 'jacket' },
-  { a: J.elbowR, b: J.handR, from: 0.055, to: 0.042, key: 'jacket' },
-  { a: J.pelvis, b: J.hipL, from: 0.105, to: 0.098, key: 'pants' },
-  { a: J.pelvis, b: J.hipR, from: 0.105, to: 0.098, key: 'pants' },
-  { a: J.hipL, b: J.kneeL, from: 0.105, to: 0.082, key: 'pants' },
-  { a: J.hipR, b: J.kneeR, from: 0.105, to: 0.082, key: 'pants' },
-  { a: J.kneeL, b: J.footL, from: 0.082, to: 0.066, key: 'pants' },
-  { a: J.kneeR, b: J.footR, from: 0.082, to: 0.066, key: 'pants' },
+  { a: J.pelvis, b: J.chest, from: 0.2, to: 0.215, key: 'jacket', flatten: 0.8 },
+  { a: J.chest, b: J.neck, from: 0.16, to: 0.093, key: 'jacket' },
+  { a: J.chest, b: J.shoulderL, from: 0.115, to: 0.1, key: 'jacket' },
+  { a: J.chest, b: J.shoulderR, from: 0.115, to: 0.1, key: 'jacket' },
+  { a: J.shoulderL, b: J.elbowL, from: 0.093, to: 0.075, key: 'jacket' },
+  { a: J.shoulderR, b: J.elbowR, from: 0.093, to: 0.075, key: 'jacket' },
+  { a: J.elbowL, b: J.handL, from: 0.072, to: 0.055, key: 'jacket' },
+  { a: J.elbowR, b: J.handR, from: 0.072, to: 0.055, key: 'jacket' },
+  { a: J.pelvis, b: J.hipL, from: 0.13, to: 0.125, key: 'pants' },
+  { a: J.pelvis, b: J.hipR, from: 0.13, to: 0.125, key: 'pants' },
+  { a: J.hipL, b: J.kneeL, from: 0.128, to: 0.112, key: 'pants' },
+  { a: J.hipR, b: J.kneeR, from: 0.128, to: 0.112, key: 'pants' },
+  { a: J.kneeL, b: J.footL, from: 0.112, to: 0.104, key: 'pants' },
+  { a: J.kneeR, b: J.footR, from: 0.112, to: 0.104, key: 'pants' },
 ];
 
 /**
  * Draws a rider from a pose.
  *
- * Limbs are tapered cylinders stretched between joints each frame, plus a fixed
- * set of details — helmet, goggles, gloves, boots — parented to the joints they
- * belong to. The same mesh serves the live rider, a ragdoll mid-crash, a replay
- * ghost and every remote player, because all four produce the same pose type.
+ * Limbs are tapered cylinders stretched between joints each frame, plus fixed
+ * detail parented to the joints it belongs to. The same mesh serves the live
+ * rider, a ragdoll mid-crash, a replay ghost and every remote player, because
+ * all four produce the same pose type.
  */
 export class RiderMesh {
   readonly group = new THREE.Group();
   private limbs: THREE.Mesh[] = [];
+  private jointCaps: Array<{ mesh: THREE.Mesh; joint: number; radius: number }> = [];
+  private hem: THREE.Mesh;
   private head: THREE.Mesh;
-  private helmetBrim: THREE.Mesh;
   private goggles: THREE.Mesh;
   private gloves: THREE.Mesh[] = [];
   private boots: THREE.Mesh[] = [];
-  private board: THREE.Mesh;
-  private topsheet: THREE.Mesh;
+  /** One deck for a snowboard, two skis for skis. */
+  private planks: THREE.Mesh[] = [];
+  private poles: THREE.Group[] = [];
   private materials = new Map<string, THREE.MeshStandardMaterial>();
   private appearance: RiderAppearance;
   private gear: GearSpec;
@@ -90,12 +93,12 @@ export class RiderMesh {
     const ghost = this.ghost;
 
     const mat = (key: keyof RiderAppearance, extra?: Partial<THREE.MeshStandardMaterialParameters>) => {
-      const id = `${key}:${extra?.roughness ?? 'd'}`;
+      const id = `${key}:${extra?.roughness ?? 'd'}:${extra?.metalness ?? 'd'}`;
       let m = this.materials.get(id);
       if (!m) {
         m = new THREE.MeshStandardMaterial({
           color: new THREE.Color(appearance[key]),
-          roughness: 0.68,
+          roughness: 0.72,
           metalness: 0.02,
           transparent: ghost,
           opacity: ghost ? 0.42 : 1,
@@ -107,9 +110,8 @@ export class RiderMesh {
       }
       return m;
     };
+    this.mat = mat;
 
-    // A unit cylinder along +Y, re-shaped per limb every frame. Open-ended,
-    // because the joint spheres cap it far more cheaply than geometry does.
     const limbGeo = new THREE.CylinderGeometry(1, 1, 1, 10, 1, true);
     for (const limb of LIMBS) {
       const mesh = new THREE.Mesh(limbGeo, mat(limb.key));
@@ -118,68 +120,120 @@ export class RiderMesh {
       this.group.add(mesh);
     }
 
-    // Joint caps, so elbows and knees are round instead of showing a seam.
     const jointGeo = new THREE.SphereGeometry(1, 8, 6);
     for (const limb of LIMBS) {
       const cap = new THREE.Mesh(jointGeo, mat(limb.key));
-      cap.castShadow = false;
       this.jointCaps.push({ mesh: cap, joint: limb.b, radius: limb.to });
       this.group.add(cap);
     }
 
-    // Head: a helmet shell slightly flattened front to back, with a brim.
-    this.head = new THREE.Mesh(new THREE.SphereGeometry(0.132, 16, 12), mat('helmet'));
-    this.head.scale.set(1, 1.04, 0.94);
+    // Jacket hem: a flared skirt hanging past the hips. This one piece does more
+    // for the freeski silhouette than any amount of limb thickening.
+    this.hem = new THREE.Mesh(new THREE.CylinderGeometry(0.215, 0.25, 0.3, 12, 1, true), mat('jacket'));
+    this.hem.castShadow = !ghost;
+    this.group.add(this.hem);
+
+    this.head = new THREE.Mesh(new THREE.SphereGeometry(0.135, 16, 12), mat('helmet'));
+    this.head.scale.set(1, 1.06, 0.95);
     this.head.castShadow = !ghost;
     this.group.add(this.head);
 
-    this.helmetBrim = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.138, 0.138, 0.03, 16, 1, true),
-      mat('helmet'),
-    );
-    this.group.add(this.helmetBrim);
-
-    // Goggles: a curved band rather than a flat slab, so it wraps the helmet.
     this.goggles = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.136, 0.136, 0.082, 16, 1, true, -0.95, 1.9),
-      mat('goggles', { roughness: 0.15, metalness: 0.55 }),
+      new THREE.CylinderGeometry(0.139, 0.139, 0.088, 16, 1, true, -0.95, 1.9),
+      mat('goggles', { roughness: 0.14, metalness: 0.6 }),
     );
     this.group.add(this.goggles);
 
-    const gloveGeo = new THREE.SphereGeometry(0.055, 8, 6);
+    const gloveGeo = new THREE.SphereGeometry(0.062, 8, 6);
     for (let i = 0; i < 2; i++) {
-      const glove = new THREE.Mesh(gloveGeo, mat('goggles', { roughness: 0.75, metalness: 0 }));
+      const glove = new THREE.Mesh(gloveGeo, mat('goggles', { roughness: 0.8, metalness: 0 }));
       glove.castShadow = !ghost;
       this.gloves.push(glove);
       this.group.add(glove);
     }
 
-    const bootGeo = new THREE.BoxGeometry(0.12, 0.13, 0.24);
+    // Ski boots are big rigid plastic shells, not shoes.
+    const bootGeo = new THREE.BoxGeometry(0.145, 0.17, 0.3);
     for (let i = 0; i < 2; i++) {
-      const boot = new THREE.Mesh(bootGeo, mat('goggles', { roughness: 0.6, metalness: 0.05 }));
+      const boot = new THREE.Mesh(bootGeo, mat('goggles', { roughness: 0.42, metalness: 0.08 }));
       boot.castShadow = !ghost;
       this.boots.push(boot);
       this.group.add(boot);
     }
 
-    this.board = new THREE.Mesh(makeBoardGeometry(gear), mat('board', { roughness: 0.24, metalness: 0.2 }));
-    this.board.castShadow = !ghost;
-    this.group.add(this.board);
-
-    // A darker stripe down the topsheet, so rotation is readable in the air.
-    this.topsheet = new THREE.Mesh(makeStripeGeometry(gear), mat('goggles', { roughness: 0.3, metalness: 0.2 }));
-    this.group.add(this.topsheet);
+    this.buildGear();
   }
 
-  private jointCaps: Array<{ mesh: THREE.Mesh; joint: number; radius: number }> = [];
+  private mat: (key: keyof RiderAppearance, extra?: Partial<THREE.MeshStandardMaterialParameters>) => THREE.MeshStandardMaterial;
+
+  /** (Re)builds the planks and poles for the current discipline. */
+  private buildGear(): void {
+    for (const plank of this.planks) {
+      plank.geometry.dispose();
+      this.group.remove(plank);
+    }
+    this.planks = [];
+    for (const pole of this.poles) {
+      pole.traverse((o) => (o as THREE.Mesh).geometry?.dispose());
+      this.group.remove(pole);
+    }
+    this.poles = [];
+
+    const skis = this.gear.discipline === 'skis';
+    const count = skis ? 2 : 1;
+    for (let i = 0; i < count; i++) {
+      const plank = new THREE.Mesh(
+        makePlankGeometry(this.gear),
+        this.mat('board', { roughness: 0.22, metalness: 0.22 }),
+      );
+      plank.castShadow = !this.ghost;
+      this.planks.push(plank);
+      this.group.add(plank);
+    }
+
+    // Poles are a ski thing. A snowboarder holding them would be absurd.
+    if (!skis) return;
+    for (let i = 0; i < 2; i++) {
+      const pole = new THREE.Group();
+      const shaft = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.0085, 0.0065, 1.18, 6),
+        this.mat('helmet', { roughness: 0.3, metalness: 0.75 }),
+      );
+      shaft.position.y = -0.59;
+      shaft.castShadow = !this.ghost;
+
+      const grip = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.017, 0.014, 0.14, 8),
+        this.mat('goggles', { roughness: 0.9, metalness: 0 }),
+      );
+      grip.position.y = -0.05;
+
+      // The basket sits just above the tip and stops the pole punching through
+      // soft snow — it is the detail that makes a pole read as a ski pole.
+      const basket = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.043, 0.043, 0.012, 10),
+        this.mat('board', { roughness: 0.8, metalness: 0 }),
+      );
+      basket.position.y = -1.05;
+
+      pole.add(shaft, grip, basket);
+      this.poles.push(pole);
+      this.group.add(pole);
+    }
+  }
 
   setGear(gear: GearSpec): void {
     if (gear.id === this.gear.id) return;
+    const disciplineChanged = gear.discipline !== this.gear.discipline;
     this.gear = gear;
-    this.board.geometry.dispose();
-    this.board.geometry = makeBoardGeometry(gear);
-    this.topsheet.geometry.dispose();
-    this.topsheet.geometry = makeStripeGeometry(gear);
+    if (disciplineChanged) {
+      this.buildGear();
+      return;
+    }
+    for (const plank of this.planks) {
+      plank.geometry.dispose();
+      plank.geometry = makePlankGeometry(gear);
+    }
   }
 
   get colors(): RiderAppearance {
@@ -208,8 +262,6 @@ export class RiderMesh {
       mesh.position.copy(_a).addScaledVector(_dir, 0.5);
       _dir.divideScalar(length);
       mesh.quaternion.setFromUnitVectors(UP, _dir);
-      // The cylinder is built with equal ends; scaling X and Z differently is
-      // what gives the taper and the flattened torso.
       const mid = (limb.from + limb.to) * 0.5;
       mesh.scale.set(mid, length, mid * (limb.flatten ?? 1));
     }
@@ -220,49 +272,72 @@ export class RiderMesh {
       cap.mesh.scale.setScalar(cap.radius);
     }
 
+    // Body frame, from the spine.
+    _pelvis.set(joints[J.pelvis].x, joints[J.pelvis].y, joints[J.pelvis].z);
+    _chest.set(joints[J.chest].x, joints[J.chest].y, joints[J.chest].z);
+    _up.subVectors(_chest, _pelvis).normalize();
+
+    _boardUp.set(pose.boardUp.x, pose.boardUp.y, pose.boardUp.z);
+    _side.set(pose.boardRight.x, pose.boardRight.y, pose.boardRight.z);
+    _fwd.set(pose.boardForward.x, pose.boardForward.y, pose.boardForward.z);
+    _m.makeBasis(_side, _boardUp, _fwd);
+    _boardQuat.setFromRotationMatrix(_m);
+
+    // Hem hangs off the pelvis, along the spine.
+    this.hem.position.copy(_pelvis).addScaledVector(_up, -0.02);
+    this.hem.quaternion.setFromUnitVectors(UP, _up);
+
     const head = joints[J.head];
     const neck = joints[J.neck];
     this.head.position.set(head.x, head.y, head.z);
 
-    // Build a head frame: up runs neck->head, forward is where the rider looks.
-    _up.set(head.x - neck.x, head.y - neck.y, head.z - neck.z).normalize();
-    _fwd.set(pose.boardForward.x, pose.boardForward.y, pose.boardForward.z);
-    _side.set(pose.boardRight.x, pose.boardRight.y, pose.boardRight.z);
-    // A snowboarder looks across the board; a skier looks along it.
+    _headUp.set(head.x - neck.x, head.y - neck.y, head.z - neck.z).normalize();
+    // A skier looks along the skis; a snowboarder looks across the board.
     const look = this.gear.discipline === 'snowboard' ? _side : _fwd;
-    _lookDir.copy(look).addScaledVector(_up, -_up.dot(look)).normalize();
-    _right.crossVectors(_up, _lookDir).normalize();
-    _m.makeBasis(_right, _up, _lookDir);
+    _lookDir.copy(look).addScaledVector(_headUp, -_headUp.dot(look)).normalize();
+    _right.crossVectors(_headUp, _lookDir).normalize();
+    _m.makeBasis(_right, _headUp, _lookDir);
     this.head.quaternion.setFromRotationMatrix(_m);
-    this.helmetBrim.quaternion.copy(this.head.quaternion);
-    this.helmetBrim.position.copy(this.head.position).addScaledVector(_up, 0.03);
     this.goggles.quaternion.copy(this.head.quaternion);
     this.goggles.position
       .copy(this.head.position)
-      .addScaledVector(_lookDir, 0.012)
-      .addScaledVector(_up, -0.012);
+      .addScaledVector(_lookDir, 0.014)
+      .addScaledVector(_headUp, -0.014);
 
     this.gloves[0].position.set(joints[J.handL].x, joints[J.handL].y, joints[J.handL].z);
     this.gloves[1].position.set(joints[J.handR].x, joints[J.handR].y, joints[J.handR].z);
 
-    // Boots sit on the board and share its orientation, which is what makes the
-    // feet look bound in rather than floating near it.
-    _m.makeBasis(
-      _side.set(pose.boardRight.x, pose.boardRight.y, pose.boardRight.z),
-      _boardUp.set(pose.boardUp.x, pose.boardUp.y, pose.boardUp.z),
-      _fwd.set(pose.boardForward.x, pose.boardForward.y, pose.boardForward.z),
-    );
-    _boardQuat.setFromRotationMatrix(_m);
     for (let i = 0; i < 2; i++) {
       const foot = joints[i === 0 ? J.footL : J.footR];
       this.boots[i].position.set(foot.x, foot.y, foot.z);
       this.boots[i].quaternion.copy(_boardQuat);
     }
 
-    this.board.position.set(pose.boardCenter.x, pose.boardCenter.y, pose.boardCenter.z);
-    this.board.quaternion.copy(_boardQuat);
-    this.topsheet.position.copy(this.board.position).addScaledVector(_boardUp, 0.012);
-    this.topsheet.quaternion.copy(_boardQuat);
+    if (this.planks.length === 2) {
+      // Skis: one under each boot, so the stance is whatever the pose says.
+      for (let i = 0; i < 2; i++) {
+        const foot = joints[i === 0 ? J.footL : J.footR];
+        this.planks[i].position.set(foot.x, foot.y, foot.z).addScaledVector(_boardUp, -0.075);
+        this.planks[i].quaternion.copy(_boardQuat);
+      }
+    } else if (this.planks.length === 1) {
+      this.planks[0].position.set(pose.boardCenter.x, pose.boardCenter.y, pose.boardCenter.z);
+      this.planks[0].quaternion.copy(_boardQuat);
+    }
+
+    // Poles: hang from the hands, angled down and back and splayed a little.
+    for (let i = 0; i < this.poles.length; i++) {
+      const hand = joints[i === 0 ? J.handL : J.handR];
+      const side = i === 0 ? -1 : 1;
+      _poleDir
+        .set(0, 0, 0)
+        .addScaledVector(_headUp, -1)
+        .addScaledVector(_fwd, -0.46)
+        .addScaledVector(_side, side * 0.22)
+        .normalize();
+      this.poles[i].position.set(hand.x, hand.y, hand.z);
+      this.poles[i].quaternion.setFromUnitVectors(DOWN, _poleDir);
+    }
   }
 
   dispose(): void {
@@ -276,12 +351,13 @@ export class RiderMesh {
 }
 
 /**
- * Board or ski outline, from the gear's real sidecut.
+ * One board, or one ski.
  *
- * A 21 m radius GS ski visibly runs straighter than a 7 m park board, and the
- * tip and tail rise, because those numbers are the ones the physics uses.
+ * Built from the gear's real sidecut, so a 21 m radius GS ski visibly runs
+ * straighter than a 7 m park board. For skis the width is per-ski, which is why
+ * the same function serves both.
  */
-function makeBoardGeometry(gear: GearSpec): THREE.BufferGeometry {
+function makePlankGeometry(gear: GearSpec): THREE.BufferGeometry {
   const segments = 40;
   const half = gear.length / 2;
   const shape = new THREE.Shape();
@@ -311,24 +387,17 @@ function makeBoardGeometry(gear: GearSpec): THREE.BufferGeometry {
   geometry.rotateZ(Math.PI / 2);
   geometry.translate(0, -0.007, 0);
 
-  // Tip and tail rocker: lift the ends so the board is not a flat plank. Camber
-  // profile decides how much, matching what the contact model already assumes.
-  const rockerScale = gear.camber === 'rocker' ? 1.5 : gear.camber === 'camber' ? 0.7 : 1;
+  // Twin-tip rocker. Park skis turn up at both ends; a cambered race ski barely
+  // does, and the profile the physics uses decides which this is.
+  const twin = gear.camber === 'rocker' ? 1.6 : gear.camber === 'camber' ? 0.75 : 1.15;
   const pos = geometry.getAttribute('position') as THREE.BufferAttribute;
   for (let i = 0; i < pos.count; i++) {
     const z = pos.getZ(i);
     const t = Math.min(1, Math.abs(z) / half);
-    pos.setY(i, pos.getY(i) + Math.pow(t, 3.5) * 0.09 * rockerScale);
+    pos.setY(i, pos.getY(i) + Math.pow(t, 3.2) * 0.1 * twin);
   }
   pos.needsUpdate = true;
   geometry.computeVertexNormals();
-  return geometry;
-}
-
-/** A stripe inlaid down the topsheet, purely so spins read in the air. */
-function makeStripeGeometry(gear: GearSpec): THREE.BufferGeometry {
-  const geometry = new THREE.PlaneGeometry(gear.waistWidth * 0.34, gear.length * 0.62);
-  geometry.rotateX(-Math.PI / 2);
   return geometry;
 }
 
@@ -338,9 +407,14 @@ const _dir = new THREE.Vector3();
 const _fwd = new THREE.Vector3();
 const _side = new THREE.Vector3();
 const _up = new THREE.Vector3();
+const _headUp = new THREE.Vector3();
 const _right = new THREE.Vector3();
 const _lookDir = new THREE.Vector3();
 const _boardUp = new THREE.Vector3();
+const _pelvis = new THREE.Vector3();
+const _chest = new THREE.Vector3();
+const _poleDir = new THREE.Vector3();
 const _m = new THREE.Matrix4();
 const _boardQuat = new THREE.Quaternion();
 const UP = new THREE.Vector3(0, 1, 0);
+const DOWN = new THREE.Vector3(0, -1, 0);
