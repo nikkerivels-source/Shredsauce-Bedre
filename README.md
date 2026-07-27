@@ -18,7 +18,7 @@ npm run server       # optional: live sessions on ws://localhost:8787
 ```
 
 ```bash
-npm test             # 55 unit tests (physics, tricks, editor, replays)
+npm test             # 64 unit tests (physics, tricks, level design, editor, replays)
 npm run build        # typecheck + production bundle into dist/
 node scripts/smoke.mjs --shots   # drives the built game in a real browser
 ```
@@ -132,6 +132,34 @@ just clear of the snow, but drop into a deep enough crouch, or get folded up by 
 compression, and the tips catch and plough — a small, quadratic-in-speed cost for
 riding sloppy.
 
+### The mountains are designed, not scattered
+
+Every run is hand-built in `src/game/levels.ts` against the design rules in
+`src/game/design.ts`, and those rules are the point. A jump owns its landing —
+about eleven times the lip height — and then the rider needs a run-out to
+settle and come back up to speed, so `jumpSpacing` is `height * 11 + 30`. That
+puts medium jumps 50-75 m apart and the big ones 85-110 m, which is where real
+slopestyle courses sit. A jib line goes above the jump line because that is the
+order you build speed in. A slalom course is a rhythm — open turns, a flush, a
+hairpin, open again — not a metronome.
+
+The ground is sculpted too. Terrain brushes cut cliff bands into Cornice, dish
+the landing out under Big Air's booter, raise spines through the Superpipe
+outrun, build the deck and face of Last Light's urban ledge, and stack pillow
+lines down Powder Bowl. The subtlety is that the baker *adds* brush strokes
+together, so a line of them sums well past any one stroke's amount — and the
+sum does not peak at a stroke centre but between stamps, where two near-full
+contributions meet. `overlapFactor` walks a full spacing period and normalises
+against the worst case, so a six-metre cliff band is six metres rather than
+eleven. Tests pin the depths, because getting this wrong is silent: the level
+still bakes, it is just the wrong shape.
+
+One helper is named for what it can do rather than what was wanted. Radial
+strokes cannot make a staircase — treads that do not overlap leave natural
+ground between them, and treads that do overlap average into a ramp — so the
+urban set is a `ledgeDrop`: a deck, a face, and flat ground below. That is how
+a snow-covered stair set skis anyway.
+
 ### Crashes are simulated too
 
 Lose it and a 16-joint Verlet ragdoll takes over, seeded with the exact velocity
@@ -143,7 +171,7 @@ and spin you were carrying. A crash out of a corked 900 keeps tumbling like one.
 
 | | |
 |---|---|
-| **Seven mountains** | Home Park, Big Air, Superpipe, Jib Yard, Powder Bowl, Giant Slalom, Superpark |
+| **Ten mountains** | Home Park, Big Air, Superpipe, Jib Yard, Powder Bowl, Giant Slalom, Superpark, Last Light, Glacier, Cornice |
 | **Endless more** | Seeded procedural generator — park, natural or urban |
 | **Level editor** | Terrain sculpting, ten feature types, live weather and snow, undo/redo |
 | **Sharing** | Levels compress to a paste-able share code (deflate + base64url) |

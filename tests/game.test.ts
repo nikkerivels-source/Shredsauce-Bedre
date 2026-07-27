@@ -9,6 +9,7 @@ import { getGear } from '../src/physics/gear.ts';
 import { Ragdoll, makePose, poseFromRider } from '../src/physics/ragdoll.ts';
 import { ReplayPlayer, ReplayRecorder, makeReplaySample } from '../src/game/replay.ts';
 import { PRESETS, generateLevel } from '../src/game/levels.ts';
+import { cliffBand, jumpLine, jumpSpacing, ledgeDrop, spine } from '../src/game/design.ts';
 import { Session } from '../src/game/session.ts';
 import { LevelEditor } from '../src/game/editor.ts';
 import { defaultProfile } from '../src/game/storage.ts';
@@ -71,6 +72,42 @@ describe('presets', () => {
       for (let i = 0; i < 240; i++) sim.step(1 / 60, input);
       expect(sim.position.isFinite()).toBe(true);
       expect(sim.telemetry.speed).toBeLessThan(80);
+    }
+  });
+
+  it('every mountain is actually built', () => {
+    for (const preset of PRESETS) {
+      const level = preset.build();
+      const ridable = level.features.filter((f) => f.kind !== 'prop' && f.kind !== 'gate');
+      const gates = level.features.filter((f) => f.kind === 'gate');
+      // Big Air is legitimately three features — a warm-up, the booter and a
+      // wall — so this is a guard against a mountain quietly becoming an empty
+      // slope, not a demand that every one be a superpark.
+      expect(ridable.length + gates.length).toBeGreaterThanOrEqual(3);
+      expect(level.features.length).toBeGreaterThan(40);
+      // Nothing may sit outside the terrain it is built on.
+      const half = level.terrain.width / 2;
+      for (const f of level.features) {
+        expect(Math.abs(f.x)).toBeLessThanOrEqual(half + 1);
+        expect(f.z).toBeGreaterThan(0);
+        expect(f.z).toBeLessThan(level.terrain.length);
+      }
+    }
+  });
+
+  it('leaves room to land and recover between jumps', () => {
+    for (const preset of PRESETS) {
+      const jumps = preset
+        .build()
+        .features.filter((f): f is Extract<Feature, { kind: 'kicker' }> => f.kind === 'kicker')
+        .sort((a, b) => a.z - b.z);
+      for (let i = 1; i < jumps.length; i++) {
+        const previous = jumps[i - 1];
+        const gap = jumps[i].z - previous.z;
+        // Only jumps on the same line matter; side hits are meant to be passed.
+        if (Math.abs(jumps[i].x - previous.x) > 14) continue;
+        expect(gap).toBeGreaterThan(previous.gap + previous.landingLength);
+      }
     }
   });
 
@@ -468,5 +505,78 @@ describe('session', () => {
     for (let i = 0; i < 60 * 5; i++) session.update(1 / 60, input);
     expect(session.timeRemaining).toBeLessThan(150);
     expect(session.timeRemaining).toBeGreaterThan(140);
+  });
+});
+
+describe('terrain sculpting', () => {
+  // Brush strokes are additive, so a line of them sums well past any one
+  // stroke's amount. The helpers correct for that; these pin the correction,
+  // because getting it wrong is silent — the level still bakes, it is just the
+  // wrong shape.
+  function flatLevel() {
+    const level = emptyLevel('sculpt');
+    level.seed = 7;
+    level.terrain.roughness = 0;
+    level.terrain.banking = 0;
+    level.terrain.length = 400;
+    level.terrain.width = 120;
+    // Baking is the expensive part, so keep these probe levels coarse.
+    level.terrain.resolution = 1;
+    return level;
+  }
+
+  /** Bakes once and returns height above the unsculpted ground. */
+  function sampler(level: ReturnType<typeof emptyLevel>) {
+    const baker = new TerrainBaker(level);
+    return (x: number, z: number) => baker.field.heightAt(x, z) - baker.naturalHeight(x, z);
+  }
+
+  it('carves a cliff band to the depth it asks for', () => {
+    const level = flatLevel();
+    cliffBand(level.brushes, 200, -40, 40, 6);
+    const relief = sampler(level);
+    let deepest = 0;
+    for (let z = 190; z <= 214; z += 1) deepest = Math.min(deepest, relief(0, z));
+    expect(deepest).toBeLessThan(-5);
+    expect(deepest).toBeGreaterThan(-7);
+  });
+
+  it('raises a spine to the height it asks for', () => {
+    const level = flatLevel();
+    spine(level.brushes, 0, 150, 270, 3, 16);
+    const relief = sampler(level);
+    let peak = 0;
+    for (let z = 150; z <= 270; z += 1) peak = Math.max(peak, relief(0, z));
+    expect(peak).toBeGreaterThan(2.5);
+    expect(peak).toBeLessThan(3.3);
+  });
+
+  it('cuts a ledge face that is flat across the slope', () => {
+    const level = flatLevel();
+    ledgeDrop(level.brushes, { x: 0, z: 200, drop: 3, length: 20, width: 24 });
+    const relief = sampler(level);
+    const samples: number[] = [];
+    for (let x = -10; x <= 10; x += 5) {
+      let deepest = 0;
+      for (let z = 195; z <= 220; z += 1) deepest = Math.min(deepest, relief(x, z));
+      samples.push(deepest);
+    }
+    for (const s of samples) {
+      expect(s).toBeLessThan(-2.4);
+      expect(s).toBeGreaterThan(-4);
+    }
+    // Scalloping is the failure mode: neighbouring stamps leaving gaps.
+    const spread = Math.max(...samples) - Math.min(...samples);
+    expect(spread).toBeLessThan(1);
+  });
+
+  it('spaces a jump line by landing length plus a run-out', () => {
+    const out: Feature[] = [];
+    const end = jumpLine(out, 100, { sizes: [2, 4], offsets: [0] });
+    expect(out).toHaveLength(2);
+    expect(out[1].z - out[0].z).toBeCloseTo(jumpSpacing(2), 6);
+    expect(end).toBeCloseTo(100 + jumpSpacing(2) + jumpSpacing(4), 6);
+    const first = out[0] as Extract<Feature, { kind: 'kicker' }>;
+    expect(jumpSpacing(2)).toBeGreaterThan(first.gap + first.landingLength);
   });
 });
