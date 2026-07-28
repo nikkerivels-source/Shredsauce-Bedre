@@ -308,6 +308,7 @@ describe('replay', () => {
       recorder.capture(1 / 60, sim, { grab: null, twist: 0, tuck: 0, limp: false });
     }
     const replay = recorder.finish({
+      authorId: 'rider_test',
       levelId: 'x',
       levelName: 'x',
       gearId: 'park-155',

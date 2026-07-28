@@ -30,6 +30,8 @@ export interface ReplayFrame {
 }
 
 export interface ReplayMeta {
+  /** Local rider id of whoever rode it. '' for replays saved before ids. */
+  authorId: string;
   levelId: string;
   levelName: string;
   gearId: string;

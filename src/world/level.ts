@@ -5,7 +5,7 @@
  * this shape, so a level is fully reproducible from its JSON (plus its seed).
  */
 
-export const LEVEL_FORMAT_VERSION = 4;
+export const LEVEL_FORMAT_VERSION = 5;
 
 export type FeatureKind =
   | 'kicker'
@@ -277,6 +277,12 @@ export interface LevelDef {
   id: string;
   name: string;
   author: string;
+  /**
+   * Local rider id of whoever built it, or '' for anything made before ids
+   * existed and for the stock mountains. The display name above can be changed
+   * or duplicated; this cannot, which is what makes it worth stamping.
+   */
+  authorId: string;
   /** Free-text description shown in the level browser. */
   notes: string;
   seed: number;
@@ -336,6 +342,7 @@ export function emptyLevel(name = 'Untitled Line'): LevelDef {
     id: makeId('lvl'),
     name,
     author: 'you',
+    authorId: '',
     notes: '',
     seed: (Math.random() * 0xffffffff) >>> 0,
     discipline: 'both',
@@ -413,6 +420,9 @@ export function migrateLevel(raw: unknown): LevelDef {
     id: typeof src.id === 'string' ? src.id : base.id,
     name: typeof src.name === 'string' ? src.name : base.name,
     author: typeof src.author === 'string' ? src.author : 'unknown',
+    // v4 -> v5. Levels from before the stamp existed keep an empty id rather
+    // than being attributed to whoever happens to be importing them.
+    authorId: typeof src.authorId === 'string' ? src.authorId : '',
     notes: typeof src.notes === 'string' ? src.notes : '',
     seed: typeof src.seed === 'number' ? src.seed >>> 0 : base.seed,
     discipline:

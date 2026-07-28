@@ -165,6 +165,54 @@ export class Shell {
     return el('div', { class: 'backbar' }, [button('Back', () => this.show(to), 'btn ghost small')]);
   }
 
+  /**
+   * The rider's name, in place, editable where it is shown.
+   *
+   * Not a prompt and not a modal. Nobody arriving at a ski game should be asked
+   * who they are before they have ridden anything, so the game picks a readable
+   * name on first run and puts it somewhere obvious with a caret in it. Click it
+   * and type; leave it and it is already fine.
+   */
+  private riderNameField(): HTMLElement {
+    const input = el('input', {
+      class: 'strip-name-input',
+      type: 'text',
+      value: this.profile.name,
+      maxlength: '18',
+      spellcheck: 'false',
+      'aria-label': 'Rider name',
+      title: 'Click to rename',
+      // Sizes to its content so it reads as text rather than as a form field.
+      size: String(Math.max(4, this.profile.name.length)),
+    }) as HTMLInputElement;
+
+    const commit = () => {
+      const next = input.value.trim().slice(0, 18);
+      // An empty field is a slip, not an instruction to be nameless.
+      if (!next) {
+        input.value = this.profile.name;
+        return;
+      }
+      if (next === this.profile.name) return;
+      this.profile.name = next;
+      this.handlers.onProfileChanged();
+    };
+
+    input.addEventListener('input', () => {
+      input.size = Math.max(4, input.value.length);
+    });
+    input.addEventListener('change', commit);
+    input.addEventListener('blur', commit);
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') input.blur();
+      if (e.key === 'Escape') {
+        input.value = this.profile.name;
+        input.blur();
+      }
+    });
+    return input;
+  }
+
   private buildMain(): HTMLElement {
     const level = levelFromXp(this.profile.xp);
     const nextAt = xpForLevel(level + 1);
@@ -201,6 +249,7 @@ export class Shell {
             const built = generateLevel(Date.now() >>> 0, 'park');
             built.name = 'New Line';
             built.author = this.profile.name;
+            built.authorId = this.profile.riderId;
             this.handlers.onOpenEditor(built);
           }),
           item('Garage', getGear(gear).name, () => this.show('gear')),
@@ -210,7 +259,7 @@ export class Shell {
         ]),
       ]),
       el('div', { class: 'rider-strip' }, [
-        el('span', { class: 'strip-name' }, [this.profile.name]),
+        this.riderNameField(),
         el('span', { class: 'strip-sep' }, ['/']),
         el('span', { class: 'strip-meta' }, [`Level ${level}`]),
         el('span', { class: 'strip-sep' }, ['/']),

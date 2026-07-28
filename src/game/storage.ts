@@ -6,7 +6,35 @@ const PROFILE_KEY = 'bluebird.profile.v1';
 const LIBRARY_KEY = 'bluebird.levels.v1';
 const SCORES_KEY = 'bluebird.scores.v1';
 
+/**
+ * Profile schema version.
+ *
+ * Bumped whenever a field is added, removed or changes meaning, with the
+ * matching step written into `migrateProfile` in the same commit. This exists
+ * from before it was needed on purpose: retrofitting a version stamp onto
+ * profiles already in people's browsers means guessing what shape each one is,
+ * and guessing wrong loses somebody's fifty hours.
+ */
+export const PROFILE_SCHEMA_VERSION = 1;
+
 export interface Profile {
+  /** Schema the stored blob was written by. See `migrateProfile`. */
+  schemaVersion: number;
+  /**
+   * Stable local identity, generated on first run and never shown.
+   *
+   * Everything the player makes is stamped with it, so that when an account
+   * does arrive it has something to claim rather than a pile of anonymous
+   * objects. It is not a secret and it is not an account.
+   */
+  riderId: string;
+  /**
+   * Set once the local rider is claimed by a signed-in account.
+   *
+   * Null means signed out, which is the normal, complete, permanently supported
+   * state of this game — not a state to be escaped from.
+   */
+  accountId: string | null;
   name: string;
   discipline: Discipline;
   goofy: boolean;
@@ -44,9 +72,45 @@ export interface Profile {
   skinId: string;
 }
 
+/**
+ * A readable name, so nobody has to be called "rider".
+ *
+ * Two words from the mountain, which reads as a name a person might have picked
+ * rather than as a serial number, and is short enough for a leaderboard row.
+ * The player can change it the moment they see it; this only has to be better
+ * than a blank field.
+ */
+const NAME_FIRST = [
+  'Cold', 'North', 'Quiet', 'Blue', 'Loose', 'High', 'Low', 'First', 'Last', 'Deep',
+  'Bright', 'Steep', 'Wind', 'Storm', 'Dawn', 'Late', 'Far', 'Hard', 'Soft', 'Long',
+];
+const NAME_SECOND = [
+  'Larch', 'Chute', 'Cornice', 'Spine', 'Traverse', 'Couloir', 'Ridge', 'Basin', 'Glade', 'Bowl',
+  'Saddle', 'Notch', 'Gully', 'Shelf', 'Face', 'Bench', 'Col', 'Drift', 'Line', 'Slab',
+];
+
+export function randomRiderName(): string {
+  const a = NAME_FIRST[Math.floor(Math.random() * NAME_FIRST.length)];
+  const b = NAME_SECOND[Math.floor(Math.random() * NAME_SECOND.length)];
+  return `${a} ${b}`;
+}
+
+/** Local identity. Random, opaque, and generated exactly once per browser. */
+export function newRiderId(): string {
+  const bytes = new Uint8Array(16);
+  if (typeof crypto !== 'undefined' && crypto.getRandomValues) crypto.getRandomValues(bytes);
+  else for (let i = 0; i < bytes.length; i++) bytes[i] = Math.floor(Math.random() * 256);
+  let out = '';
+  for (const b of bytes) out += b.toString(16).padStart(2, '0');
+  return `rider_${out}`;
+}
+
 export function defaultProfile(): Profile {
   return {
-    name: 'rider',
+    schemaVersion: PROFILE_SCHEMA_VERSION,
+    riderId: newRiderId(),
+    accountId: null,
+    name: randomRiderName(),
     // It is a freeski game first. Snowboard is a choice, not the default.
     discipline: 'skis',
     goofy: false,
@@ -94,9 +158,41 @@ function write(key: string, value: unknown): void {
   }
 }
 
+/**
+ * Brings a stored profile up to the current schema.
+ *
+ * The contract is that this only ever *adds*. A profile written by an older
+ * build must come out the other side with every field it had still set to the
+ * value it had; anything missing is filled in, nothing is dropped because the
+ * current build does not recognise it. Unknown keys are preserved by the spread
+ * for the same reason — a downgrade should not silently destroy data a newer
+ * build wrote.
+ */
+export function migrateProfile(stored: Partial<Profile>): Profile {
+  const version = Number.isFinite(stored.schemaVersion) ? Number(stored.schemaVersion) : 0;
+  const profile = { ...defaultProfile(), ...stored };
+
+  // v0 -> v1: local identity. Profiles written before this existed have no
+  // rider id and no account field, and the name may be the old fixed default.
+  if (version < 1) {
+    profile.riderId = typeof stored.riderId === 'string' && stored.riderId ? stored.riderId : newRiderId();
+    profile.accountId = null;
+    // 'rider' was the hard-coded default, so it carries no intent and can be
+    // replaced. A name the player actually typed is theirs and is left alone.
+    if (!stored.name || stored.name === 'rider') profile.name = randomRiderName();
+  }
+
+  profile.schemaVersion = PROFILE_SCHEMA_VERSION;
+  if (typeof profile.riderId !== 'string' || !profile.riderId) profile.riderId = newRiderId();
+  if (typeof profile.accountId !== 'string') profile.accountId = null;
+  if (typeof profile.name !== 'string' || !profile.name.trim()) profile.name = randomRiderName();
+  return profile;
+}
+
 export function loadProfile(): Profile {
   const stored = read<Partial<Profile>>(PROFILE_KEY, {});
-  const profile = { ...defaultProfile(), ...stored };
+  const wasCurrent = stored.schemaVersion === PROFILE_SCHEMA_VERSION;
+  const profile = migrateProfile(stored);
   profile.appearance = { ...defaultAppearance(), ...(stored.appearance ?? {}) };
   if (!Array.isArray(profile.ownedGear)) profile.ownedGear = defaultProfile().ownedGear;
   if (!Array.isArray(profile.completed)) profile.completed = [];
@@ -111,6 +207,15 @@ export function loadProfile(): Profile {
     profile.pass && typeof profile.pass === 'object' && profile.pass.owned === true
       ? { owned: true, since: Number(profile.pass.since) || Date.now() }
       : null;
+
+  // Persist a fresh or migrated profile immediately.
+  //
+  // Without this the rider id only reaches storage when the player happens to
+  // change a setting. Someone who opens the game, builds a level and closes the
+  // tab would have that level stamped with an id that is minted again — as a
+  // different id — on their next visit, and the thing that was supposed to tie
+  // their work together would instead be the thing that scattered it.
+  if (!wasCurrent) write(PROFILE_KEY, profile);
   return profile;
 }
 
@@ -233,6 +338,8 @@ export async function decodeLevelCode(code: string): Promise<LevelDef> {
 // ---------------------------------------------------------------------------
 
 export interface ScoreRecord {
+  /** Local rider id of whoever set it. '' for scores from before ids. */
+  riderId: string;
   levelId: string;
   levelName: string;
   mode: string;

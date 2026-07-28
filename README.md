@@ -1,7 +1,15 @@
 # Bluebird
 
-A freeski game for the browser, built on a real carving and aerial simulation
-rather than a scripted one. Snowboard is there too, as a choice.
+**Bluebird is a freeski game.** Skis are the default on a new profile, the
+tutorial teaches skis, and the menus lead with skis. Snowboard is fully
+playable and stays that way — every board, grab and gear figure keeps working —
+but it is a choice the player makes, not a second product the game maintains in
+parallel. New work goes to skiing first.
+
+That is a decision about defaults and priority, not about deletion. Nothing
+snowboard-related has been or will be removed to make room for it.
+
+Built on a real carving and aerial simulation rather than a scripted one.
 
 *Bluebird* is what riders call a clear, cold, blue-sky day after a storm — the
 one you wait all season for. The whole game is built around that light: pale

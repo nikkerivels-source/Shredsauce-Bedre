@@ -146,7 +146,13 @@ class App {
       },
       onEditorSave: () => {
         if (!this.editor) return;
-        saveToLibrary(this.editor.export());
+        const built = this.editor.export();
+        // Stamp on the way out rather than at creation: a level can be started
+        // from a share code or a preset, and whoever saves it here is the one
+        // whose library it lands in.
+        built.author = this.profile.name;
+        built.authorId = this.profile.riderId;
+        saveToLibrary(built);
         this.shell.toast('Saved to your builds');
       },
       onWatchReplay: (replay) => this.watchReplay(replay),
@@ -300,6 +306,7 @@ class App {
 
     const landed = summary.tricks.filter((t) => t.landed).sort((a, b) => b.points - a.points);
     recordScore({
+      riderId: this.profile.riderId,
       levelId: this.session.level.id,
       levelName: this.session.level.name,
       mode: this.session.mode,
@@ -318,6 +325,7 @@ class App {
     if (this.session.recorder.frames.length > 10) {
       saveReplay(
         this.session.recorder.finish({
+          authorId: this.profile.riderId,
           levelId: this.session.level.id,
           levelName: this.session.level.name,
           gearId: this.session.gear.id,
