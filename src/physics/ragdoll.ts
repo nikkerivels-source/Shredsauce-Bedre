@@ -1,4 +1,4 @@
-import { Vec3, clamp01, lerp } from '../core/math.ts';
+import { Vec3, clamp, clamp01, damp, lerp } from '../core/math.ts';
 import type { Heightfield } from '../world/heightfield.ts';
 import type { RiderSim } from './riderSim.ts';
 import { getGrab, type GrabId } from './grabs.ts';
@@ -108,6 +108,37 @@ export interface RiderPose {
   /** Solved pole tips, left then right. Skis only. */
   poleTips: [Vec3, Vec3];
   polePlanted: [boolean, boolean];
+  /**
+   * Smoothed motion state carried between frames.
+   *
+   * A rider's arms do not teleport to wherever the numbers say this instant —
+   * they lag, overshoot and settle, and a landing keeps affecting them for
+   * about half a second after the impact is over. That needs memory, and the
+   * pose is the only thing that persists per rider, so it lives here. Every
+   * value is a smoothed 0..1 or -1..1; nothing here is read by the simulation.
+   */
+  motion: RiderMotion;
+}
+
+export interface RiderMotion {
+  /** Arm swing around the body's vertical, leading a spin. -1..1. */
+  lead: number;
+  /** How far the arms are up and open. 0 settled, 1 fully out. */
+  lift: number;
+  /** Landing shock, spikes to 1 on a hard touchdown and decays away. */
+  shock: number;
+  /** Inside-hand drop through a railed carve. -1..1, signed by edge. */
+  carve: number;
+  /** Chest lag behind the pelvis through a rotation, radians. */
+  spineLag: number;
+  /** Head yaw toward where the rotation is going, radians. */
+  headLead: number;
+  /** Previous leg length, so a pop can be told from a compression. */
+  lastLeg: number;
+}
+
+export function makeMotion(): RiderMotion {
+  return { lead: 0, lift: 0, shock: 0, carve: 0, spineLag: 0, headLead: 0, lastLeg: 0.92 };
 }
 
 export function makePose(): RiderPose {
@@ -120,6 +151,7 @@ export function makePose(): RiderPose {
     limp: false,
     poleTips: [new Vec3(), new Vec3()],
     polePlanted: [false, false],
+    motion: makeMotion(),
   };
 }
 
@@ -127,6 +159,11 @@ const _right = new Vec3();
 const _up = new Vec3();
 const _fwd = new Vec3();
 const _tmp = new Vec3();
+const _poleRest = new Vec3();
+const _poleArm = new Vec3();
+
+/** Grip-to-tip length of a pole, matching the model the renderer draws. */
+const POLE_HANG = 1.1;
 
 /**
  * Poses the rider while they are still in control.
@@ -139,7 +176,7 @@ const _tmp = new Vec3();
 export function poseFromRider(
   sim: RiderSim,
   pose: RiderPose,
-  opts: { grab: GrabId | null; twist: number; tuck: number; goofy: boolean },
+  opts: { grab: GrabId | null; twist: number; tuck: number; goofy: boolean; dt?: number },
 ): RiderPose {
   sim.getBodyAxes(_right, _up, _fwd);
   const joints = pose.joints;
@@ -149,6 +186,9 @@ export function poseFromRider(
   const legs = sim.legLength;
   const crouch = clamp01((1.0 - legs) / 0.5);
   const tuck = clamp01(opts.tuck);
+
+  const motion = pose.motion;
+  updateMotion(motion, sim, _up, opts.dt ?? 1 / 60, crouch, tuck);
 
   sim.getBoardCenter(pose.boardCenter);
   sim.getBoardAxes(pose.boardRight, pose.boardUp, pose.boardForward);
@@ -161,17 +201,36 @@ export function poseFromRider(
       .addScaled(_fwd, fwd);
   };
 
-  // Torso, measured from the centre of mass which sits around the navel.
-  const spineLean = lerp(0, -0.22, tuck);
-  set(J.pelvis, -0.08, 0, spineLean * 0.3);
-  set(J.chest, 0.24 - crouch * 0.05, 0, spineLean * 0.7);
-  set(J.neck, 0.42 - crouch * 0.07, 0, spineLean);
-  set(J.head, 0.57 - crouch * 0.08, 0, spineLean * 1.1);
+  /** As `set`, but rotated about the body's vertical by `turn` radians. */
+  const setTurned = (index: number, up: number, right: number, fwd: number, turn: number) => {
+    const c = Math.cos(turn);
+    const sn = Math.sin(turn);
+    joints[index]
+      .copy(com)
+      .addScaled(_up, up)
+      .addScaled(_right, right * c - fwd * sn)
+      .addScaled(_fwd, right * sn + fwd * c);
+  };
 
-  // Counter-rotation: the shoulders wind against the board before a spin.
+  // Torso, measured from the centre of mass which sits around the navel.
+  //
+  // The spine is not rigid. Through a rotation the chest lags the pelvis and
+  // then catches up, and the head goes further still in the other direction —
+  // a skier looks where the spin is going before the body arrives. Both are
+  // single springs in `motion`, not keyframes, so they fall out of whatever the
+  // rider is actually doing.
+  const spineLean = lerp(0, -0.22, tuck);
+  const lag = motion.spineLag;
+  set(J.pelvis, -0.08, 0, spineLean * 0.3);
+  setTurned(J.chest, 0.24 - crouch * 0.05, 0, spineLean * 0.7, lag * 0.5);
+  setTurned(J.neck, 0.42 - crouch * 0.07, 0, spineLean, lag * 0.8);
+  setTurned(J.head, 0.57 - crouch * 0.08, 0.06 * motion.headLead, spineLean * 1.1, motion.headLead);
+
+  // Counter-rotation: the shoulders wind against the board before a spin, and
+  // ride the spine's lag through it.
   const twist = opts.twist * 0.34;
-  set(J.shoulderL, 0.22, -SEGMENT.shoulderSpan, twist);
-  set(J.shoulderR, 0.22, SEGMENT.shoulderSpan, -twist);
+  setTurned(J.shoulderL, 0.22, -SEGMENT.shoulderSpan, twist, lag);
+  setTurned(J.shoulderR, 0.22, SEGMENT.shoulderSpan, -twist, lag);
 
   // Feet ride the board, offset along it by the stance width.
   const stance = 0.26;
@@ -215,32 +274,130 @@ export function poseFromRider(
       joints[trailHand].copy(target).addScaled(pose.boardForward, -0.2);
     } else if (grab.hand === 'lead') {
       joints[leadHand].copy(target);
-      restHand(joints, trailHand, com, _up, _right, _fwd, opts.goofy ? -1 : 1);
+      restHand(joints, trailHand, com, _up, _right, _fwd, opts.goofy ? -1 : 1, motion, crouch, tuck);
     } else {
       joints[trailHand].copy(target);
-      restHand(joints, leadHand, com, _up, _right, _fwd, opts.goofy ? 1 : -1);
+      restHand(joints, leadHand, com, _up, _right, _fwd, opts.goofy ? 1 : -1, motion, crouch, tuck);
     }
   } else {
-    restHand(joints, J.handL, com, _up, _right, _fwd, -1);
-    restHand(joints, J.handR, com, _up, _right, _fwd, 1);
+    restHand(joints, J.handL, com, _up, _right, _fwd, -1, motion, crouch, tuck);
+    restHand(joints, J.handR, com, _up, _right, _fwd, 1, motion, crouch, tuck);
   }
 
   placeElbow(joints[J.shoulderL], joints[J.handL], joints[J.elbowL], _up);
   placeElbow(joints[J.shoulderR], joints[J.handR], joints[J.elbowR], _up);
 
-  // The renderer draws each pole from the hand to the tip the solver produced,
-  // so a planted pole visibly stays put in the snow while the skier moves past
-  // it. Nothing here invents a position.
+  // Poles.
+  //
+  // A planted pole is anchored in the snow and the solver owns it completely —
+  // it must stay exactly where it was driven in while the skier travels past,
+  // so nothing here is allowed to touch it.
+  //
+  // A pole that is *not* planted is a metre of aluminium swinging from a wrist,
+  // and the solver has no opinion about it. It used to be drawn to the same
+  // rigid offset every frame, which is why the poles read as two sticks glued
+  // to the rider. Now the tip chases where the hand has been rather than where
+  // it is: the lag is what makes it swing, and because the hand is finally
+  // moving, that swing comes for free.
+  const swingDt = opts.dt ?? 1 / 60;
   for (let i = 0; i < 2; i++) {
     const report = sim.poles[i];
-    pose.poleTips[i].set(report.tipX, report.tipY, report.tipZ);
-    pose.polePlanted[i] = report.planted;
+    if (report.planted) {
+      pose.poleTips[i].set(report.tipX, report.tipY, report.tipZ);
+      pose.polePlanted[i] = true;
+      continue;
+    }
+    pose.polePlanted[i] = false;
+
+    // Where the tip would hang from a still hand: down and a little behind.
+    const hand = joints[i === 0 ? J.handL : J.handR];
+    _poleRest
+      .copy(hand)
+      .addScaled(_up, -POLE_HANG * 0.94)
+      .addScaled(_fwd, -POLE_HANG * 0.3)
+      .addScaled(_right, (i === 0 ? -1 : 1) * POLE_HANG * 0.12);
+
+    const tip = pose.poleTips[i];
+    // A tip that has never been placed starts at rest rather than at the world
+    // origin, which would draw a pole across the entire mountain on frame one.
+    if (tip.lengthSq() < 1e-6) tip.copy(_poleRest);
+    // Chase, then hold the length: the shaft is rigid even though the wrist is
+    // not, so the tip may lag around the hand but never further from it.
+    const chase = Math.min(1, swingDt * 11);
+    tip.set(
+      tip.x + (_poleRest.x - tip.x) * chase,
+      tip.y + (_poleRest.y - tip.y) * chase,
+      tip.z + (_poleRest.z - tip.z) * chase,
+    );
+    _poleArm.subVectors(tip, hand);
+    const reach = _poleArm.length();
+    if (reach > 1e-4) tip.copy(hand).addScaled(_poleArm.scale(1 / reach), POLE_HANG);
   }
 
   pose.limp = false;
   return pose;
 }
 
+/**
+ * Updates the smoothed motion state from what the simulation is doing.
+ *
+ * Everything here is a reading, never a script. There is no animation clip and
+ * no timeline: a spin is fast because the body is turning fast, arms come up
+ * because the gear left the snow, and a landing throws them because the leg
+ * spring bottomed out. Turn the physics off and this all goes still, which is
+ * the property that makes it read as a person rather than as a loop.
+ */
+function updateMotion(m: RiderMotion, sim: RiderSim, up: Vec3, dt: number, crouch: number, tuck: number): void {
+  const t = sim.telemetry;
+  const step = dt > 0 ? dt : 1 / 60;
+
+  // Spin. A skier throws their arms around ahead of the turn and reels them in
+  // as it winds up; the sign of the body-vertical rotation is all that is
+  // needed to know which way. Full swing at about 460 deg/s, which is roughly
+  // where a 540 sits.
+  const spin = sim.angularVelocity.dot(up);
+  m.lead = damp(m.lead, clamp(spin / 8, -1, 1), 7, step);
+
+  // Off the snow the arms come up and open for balance. On it they settle.
+  m.lift = damp(m.lift, t.airborne ? 1 : 0, t.airborne ? 6 : 4, step);
+
+  // A pop is the legs extending fast; the arms go up with it. Compression on
+  // the way into a jump pulls them down, which is the anticipation that makes
+  // the pop read as deliberate.
+  const legRate = (sim.legLength - m.lastLeg) / step;
+  m.lastLeg = sim.legLength;
+  if (legRate > 1.2 && !t.airborne) m.lift = Math.min(1.35, m.lift + legRate * 0.16);
+
+  // Landing. The leg spring publishes the force it is carrying, so a hard
+  // touchdown is simply a large number: hands fly out, then recover over about
+  // four tenths of a second.
+  if (!t.airborne && t.legForce > 9000) m.shock = Math.min(1, m.shock + (t.legForce - 9000) / 9000);
+  m.shock *= Math.exp(-step / 0.13);
+
+  // Carve. On a railed edge the inside hand drops toward the snow — the single
+  // detail that makes a fast turn look fast. A skidded turn does not get it,
+  // which is what `carveQuality` is for.
+  const edge = clamp(t.edgeAngle / 45, -1, 1);
+  const railed = t.airborne ? 0 : edge * t.carveQuality * clamp01((t.speed - 5) / 10);
+  m.carve = damp(m.carve, railed, 5, step);
+
+  // The chest lags the pelvis into a rotation and catches up out of it, and the
+  // head leads: a skier looks where the spin is going before the body follows.
+  m.spineLag = damp(m.spineLag, clamp(-spin * 0.055, -0.34, 0.34), 9, step);
+  m.headLead = damp(m.headLead, clamp(spin * 0.1, -0.7, 0.7), 6, step);
+
+  void crouch;
+  void tuck;
+}
+
+/**
+ * Places the hand that is not holding a grab.
+ *
+ * This used to be a constant offset from the pelvis — 4 cm forward, 44 across,
+ * 18 up — which meant the arms were welded on. The rider could spin, pop, land
+ * and rail a carve without the hands moving a millimetre relative to the body,
+ * and no amount of shading hides a mannequin.
+ */
 function restHand(
   joints: Vec3[],
   index: number,
@@ -249,12 +406,42 @@ function restHand(
   right: Vec3,
   fwd: Vec3,
   side: number,
+  m: RiderMotion,
+  crouch: number,
+  tuck: number,
 ): void {
-  joints[index]
-    .copy(com)
-    .addScaled(up, 0.04)
-    .addScaled(right, side * 0.44)
-    .addScaled(fwd, 0.18);
+  // Base stance, then everything the rider is doing moves it.
+  //
+  // Arms pull in as the spin winds up and as speed rises, because that is both
+  // what a rider does and what conservation of angular momentum rewards.
+  const pullIn = Math.abs(m.lead) * 0.13 + tuck * 0.1;
+  let across = side * (0.44 - pullIn) + m.lift * side * 0.07;
+  let along = 0.18 + m.lift * 0.05 - m.shock * 0.12;
+
+  // Swing the pair around the body's vertical so they lead the rotation. Done
+  // as a rotation rather than as an offset so both arms stay a pair — one comes
+  // across the chest while the other opens behind, which is what a spin looks
+  // like from outside.
+  const swing = m.lead * 0.85;
+  const cos = Math.cos(swing);
+  const sin = Math.sin(swing);
+  const rotAcross = across * cos - along * sin;
+  const rotAlong = across * sin + along * cos;
+  across = rotAcross;
+  along = rotAlong;
+
+  // Height: down through a crouch, up in the air, thrown up by a landing.
+  let rise = 0.04 - crouch * 0.14 + m.lift * 0.2 + m.shock * 0.34;
+
+  // The inside hand of a carve reaches for the snow while the outside one lifts.
+  // `carve` is signed by the edge, so multiplying by the side of the body picks
+  // out which hand is on the inside without a branch.
+  const inside = m.carve * side;
+  rise -= Math.max(0, inside) * 0.44;
+  across += Math.max(0, inside) * side * 0.12;
+  rise += Math.max(0, -inside) * 0.1;
+
+  joints[index].copy(com).addScaled(up, rise).addScaled(right, across).addScaled(fwd, along);
 }
 
 /** Two-bone IK with the knee pushed toward `hint`. */

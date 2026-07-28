@@ -109,6 +109,19 @@ for (const shot of shots) {
   if (errors.length > 0) throw new Error(`${shot}: ${errors.join(' | ')}`);
 
   const file = join(outDir, `${shot}-${preset}-${weather}.png`);
+  // The spin capture builds its own frames off-screen; everything else is a
+  // straight screenshot of the last rendered frame.
+  const strip = await page.evaluate(() => window.benchFrames ?? null);
+  if (strip && strip.length > 0) {
+    for (let i = 0; i < strip.length; i++) {
+      const png = Buffer.from(strip[i].split(',')[1], 'base64');
+      await writeFile(join(outDir, `${shot}-${String(i).padStart(2, '0')}.png`), png);
+    }
+    console.log(`${shot.padEnd(9)} wrote ${strip.length} rider frames`);
+    await page.close();
+    reports.push({ shot, file, ...report });
+    continue;
+  }
   await page.screenshot({ path: file });
   reports.push({ shot, file, ...report });
   console.log(

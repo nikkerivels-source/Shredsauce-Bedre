@@ -268,6 +268,7 @@ export class Session {
         twist: input.twist,
         tuck: input.tuck,
         goofy: this.profile.goofy,
+        dt,
       });
       this.ragdoll.seed(this.pose, this.sim.velocity, this.sim.angularVelocity, this.sim.position, dt);
     }
@@ -282,6 +283,7 @@ export class Session {
         twist: input.twist,
         tuck: input.tuck,
         goofy: this.profile.goofy,
+        dt,
       });
     }
     this.wasLimp = this.pose.limp;

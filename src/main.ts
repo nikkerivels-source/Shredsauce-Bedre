@@ -17,7 +17,7 @@ import {
 import { consumeCheckoutReturn } from './game/pass.ts';
 import { ReplayPlayer, makeReplaySample, saveReplay, type Replay, type ReplaySample } from './game/replay.ts';
 import { getGear } from './physics/gear.ts';
-import { makePose, poseFromRider, type RiderPose } from './physics/ragdoll.ts';
+import { makeMotion, makePose, poseFromRider, type RiderMotion, type RiderPose } from './physics/ragdoll.ts';
 import { RiderSim, defaultTuning } from './physics/riderSim.ts';
 import { WorldView, detectQuality, qualityPreset, type QualitySettings } from './render/renderer.ts';
 import { defaultAppearance, type RiderAppearance } from './render/rider.ts';
@@ -64,6 +64,7 @@ class App {
   private lastFrame = performance.now();
   private accumulatedAir = 0;
   private ghostPose: RiderPose = makePose();
+  private ghostMotion = new Map<string, RiderMotion>();
   private ghostSim: RiderSim;
   private scratch = new Vec3();
   private pointerDown = false;
@@ -380,6 +381,7 @@ class App {
       twist: 0,
       tuck: 0,
       goofy: this.profile.goofy,
+      dt,
     });
     this.view.updateRider(
       dt,
@@ -519,12 +521,12 @@ class App {
     });
 
     for (const player of this.net.players.values()) {
-      this.poseRemote(player);
+      this.poseRemote(player, dt);
     }
   }
 
   /** Drives a spare simulation into the remote player's state to pose them. */
-  private poseRemote(player: RemotePlayer): void {
+  private poseRemote(player: RemotePlayer, dt: number): void {
     const gear = getGear(player.gearId);
     this.ghostSim.gear = gear;
     this.ghostSim.position.copy(player.position);
@@ -532,11 +534,21 @@ class App {
     this.ghostSim.legLength = player.legLength;
     this.ghostSim.angulation = player.angulation;
     this.ghostSim.hipShift = player.hipShift;
+    // Each remote rider needs their own arm motion. The pose object is a shared
+    // scratch buffer reused for every player in the room, so without this they
+    // would all smooth into one another's state and twitch.
+    let motion = this.ghostMotion.get(player.id);
+    if (!motion) {
+      motion = makeMotion();
+      this.ghostMotion.set(player.id, motion);
+    }
+    this.ghostPose.motion = motion;
     poseFromRider(this.ghostSim, this.ghostPose, {
       grab: player.grab,
       twist: player.twist,
       tuck: player.tuck,
       goofy: player.goofy,
+      dt,
     });
     const colors: RiderAppearance = { ...defaultAppearance(), ...(player.colors as Partial<RiderAppearance>) };
     this.view.setGhost(player.id, gear, colors, this.ghostPose);
@@ -577,7 +589,7 @@ class App {
 
     // Pose the rider at the spawn point so you can see the scale of what you build.
     this.session.sim.reset(this.session.level.spawn.x, this.session.level.spawn.z, this.session.level.spawn.heading);
-    poseFromRider(this.session.sim, this.session.pose, { grab: null, twist: 0, tuck: 0, goofy: this.profile.goofy });
+    poseFromRider(this.session.sim, this.session.pose, { grab: null, twist: 0, tuck: 0, goofy: this.profile.goofy, dt });
     this.view.updateRider(dt, this.session.pose, this.session.sim.telemetry, this.session.sim.contacts, this.session.sim.velocity);
   }
 
@@ -601,6 +613,7 @@ class App {
       twist: this.replaySample.twist,
       tuck: this.replaySample.tuck,
       goofy: player.replay.meta.goofy,
+      dt,
     });
 
     this.view.updateRider(dt, this.replayPose, this.replaySim.telemetry, [], this.replaySim.velocity);
