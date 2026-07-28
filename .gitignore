@@ -9,3 +9,7 @@ shot-*.png
 bluebird.html
 filetest.png
 .single-build/
+
+# Render bench: per-run build directory and captured shots.
+.bench-build-*/
+shots/

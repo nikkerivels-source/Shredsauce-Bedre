@@ -19,7 +19,7 @@ import { ReplayPlayer, makeReplaySample, saveReplay, type Replay, type ReplaySam
 import { getGear } from './physics/gear.ts';
 import { makePose, poseFromRider, type RiderPose } from './physics/ragdoll.ts';
 import { RiderSim, defaultTuning } from './physics/riderSim.ts';
-import { WorldView, detectQuality, qualityPreset } from './render/renderer.ts';
+import { WorldView, detectQuality, qualityPreset, type QualitySettings } from './render/renderer.ts';
 import { defaultAppearance, type RiderAppearance } from './render/rider.ts';
 import type { CameraMode } from './render/cameras.ts';
 import { NetClient, type RemotePlayer } from './net/client.ts';
@@ -29,6 +29,13 @@ import type { LevelDef } from './world/level.ts';
 import { featureBounds } from './world/terrain.ts';
 
 type AppMode = 'menu' | 'riding' | 'editing' | 'replay';
+
+/** The saved preset, with the player's render scale folded in. */
+function startingQuality(profile: Profile): QualitySettings {
+  const quality = qualityPreset(profile.quality ?? detectQuality());
+  quality.resolutionScale = profile.resolutionScale;
+  return quality;
+}
 
 /**
  * Application shell: owns the loop and wires the session, renderer, input and UI
@@ -77,7 +84,7 @@ class App {
     const level = buildPreset('home-park');
     this.session = new Session(level, this.profile);
 
-    this.view = new WorldView(canvas, this.session.field, qualityPreset(this.profile.quality ?? detectQuality()));
+    this.view = new WorldView(canvas, this.session.field, startingQuality(this.profile));
     this.view.loadLevel(level, this.session.field, this.session.grindSurfaces);
     this.view.setRider(this.session.gear, this.profile.appearance);
 
@@ -204,12 +211,11 @@ class App {
     this.session.profile = this.profile;
     this.input.setDiscipline(gear.discipline);
     this.view.setRider(gear, this.profile.appearance);
+    // Render scale rides on top of the preset: the preset says how many samples
+    // the tier can afford, the player says how many pixels their device can.
     const quality = qualityPreset(this.profile.quality);
-    if (quality.triangleBudget !== this.view.quality.triangleBudget) this.view.setQuality(quality);
-    else {
-      this.view.quality = quality;
-      this.view.renderer.shadowMap.enabled = quality.shadows;
-    }
+    quality.resolutionScale = this.profile.resolutionScale;
+    this.view.setQuality(quality);
   }
 
   private startRun(level: LevelDef, mode: GameMode, opts: { announce?: boolean } = {}): void {

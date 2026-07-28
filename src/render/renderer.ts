@@ -7,6 +7,7 @@ import type { ContactReport, Telemetry } from '../physics/riderSim.ts';
 import type { RiderPose } from '../physics/ragdoll.ts';
 import type { GearSpec } from '../physics/gear.ts';
 import { CameraRig } from './cameras.ts';
+import { OutputChain, type OutputSettings } from './post.ts';
 import { CarveTrail, SprayParticles } from './effects.ts';
 import { RiderMesh, type RiderAppearance } from './rider.ts';
 import {
@@ -31,17 +32,64 @@ export interface QualitySettings {
   triangleBudget: number;
   particles: boolean;
   trails: boolean;
+  /** MSAA samples on the scene target. 0 means none. */
+  msaaSamples: number;
+  /** Cheap edge blend, for the tier that cannot afford samples. */
+  fxaa: boolean;
+  /** Render scale, 0.5–1. The player owns this one. */
+  resolutionScale: number;
 }
 
+/**
+ * Anti-aliasing by tier.
+ *
+ * White snow against a dark tree line is the worst edge in the game, so the
+ * setting that draws it best is the one that must have samples. It used to be
+ * the other way round: the context asked for `antialias` only when the pixel
+ * ratio was 1.5 or under, which is exactly `low` and `medium` — `high` rendered
+ * jagged, and no preset change could fix it afterwards because the flag is
+ * fixed when the context is created.
+ *
+ * `low` keeps no samples on purpose. A weak phone gets FXAA, which costs one
+ * pass instead of four times the fill rate, and a resolution scale it can pull
+ * down if even that is too much.
+ */
 export function qualityPreset(name: 'low' | 'medium' | 'high'): QualitySettings {
   switch (name) {
     case 'low':
-      return { shadows: false, maxPixelRatio: 1, triangleBudget: 70_000, particles: false, trails: true };
+      return {
+        shadows: false,
+        maxPixelRatio: 1,
+        triangleBudget: 70_000,
+        particles: false,
+        trails: true,
+        msaaSamples: 0,
+        fxaa: true,
+        resolutionScale: 1,
+      };
     case 'medium':
-      return { shadows: true, maxPixelRatio: 1.5, triangleBudget: 160_000, particles: true, trails: true };
+      return {
+        shadows: true,
+        maxPixelRatio: 1.5,
+        triangleBudget: 160_000,
+        particles: true,
+        trails: true,
+        msaaSamples: 2,
+        fxaa: false,
+        resolutionScale: 1,
+      };
     case 'high':
     default:
-      return { shadows: true, maxPixelRatio: 2, triangleBudget: 300_000, particles: true, trails: true };
+      return {
+        shadows: true,
+        maxPixelRatio: 2,
+        triangleBudget: 300_000,
+        particles: true,
+        trails: true,
+        msaaSamples: 4,
+        fxaa: false,
+        resolutionScale: 1,
+      };
   }
 }
 
@@ -67,6 +115,7 @@ export class WorldView {
   readonly rig: CameraRig;
   readonly trail: CarveTrail;
   readonly spray: SprayParticles;
+  readonly output: OutputChain;
   quality: QualitySettings;
 
   private rider: RiderMesh | null = null;
@@ -88,9 +137,12 @@ export class WorldView {
   constructor(canvas: HTMLCanvasElement, field: Heightfield, quality: QualitySettings) {
     this.field = field;
     this.quality = quality;
+    // No `antialias` on the context. It cannot be changed after creation, which
+    // made it useless the moment quality became a runtime setting; samples now
+    // live on the scene target instead, where the preset can move them.
     this.renderer = new THREE.WebGLRenderer({
       canvas,
-      antialias: quality.maxPixelRatio <= 1.5,
+      antialias: false,
       powerPreference: 'high-performance',
       stencil: false,
     });
@@ -102,6 +154,7 @@ export class WorldView {
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.22;
 
+    this.output = new OutputChain(outputSettings(quality));
     this.rig = new CameraRig(field);
     this.trail = new CarveTrail();
     this.spray = new SprayParticles();
@@ -173,12 +226,14 @@ export class WorldView {
   private selectionBox: THREE.LineSegments | null = null;
 
   setQuality(quality: QualitySettings): void {
+    const rebuildGeometry = quality.triangleBudget !== this.quality.triangleBudget;
     this.quality = quality;
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, quality.maxPixelRatio));
     this.renderer.shadowMap.enabled = quality.shadows;
     this.spray.points.visible = quality.particles;
     this.trail.mesh.visible = quality.trails;
-    if (this.level) this.loadLevel(this.level, this.field, this.currentGrinds);
+    this.output.setSettings(outputSettings(quality), this.renderer);
+    if (rebuildGeometry && this.level) this.loadLevel(this.level, this.field, this.currentGrinds);
   }
 
   private currentGrinds: readonly GrindSurface[] = [];
@@ -382,11 +437,13 @@ export class WorldView {
       refreshTerrainWear(this.terrain, this.field);
     }
 
-    this.renderer.render(this.scene, this.camera);
+    this.output.render(this.renderer, this.scene, this.camera);
   }
 
   resize(width: number, height: number): void {
     this.renderer.setSize(width, height, false);
+    const buffer = this.renderer.getDrawingBufferSize(_bufferSize);
+    this.output.setSize(buffer.x, buffer.y, this.renderer);
     this.rig.resize(width / Math.max(1, height));
   }
 
@@ -396,6 +453,7 @@ export class WorldView {
     this.clearGhosts();
     this.trail.dispose();
     this.spray.dispose();
+    this.output.dispose();
     if (this.terrain) disposeObject(this.terrain);
     if (this.grinds) disposeObject(this.grinds);
     if (this.props) disposeObject(this.props);
@@ -405,4 +463,13 @@ export class WorldView {
   }
 }
 
+function outputSettings(quality: QualitySettings): OutputSettings {
+  return {
+    samples: quality.msaaSamples,
+    fxaa: quality.fxaa,
+    resolutionScale: quality.resolutionScale,
+  };
+}
+
 const _normal = new THREE.Vector3();
+const _bufferSize = new THREE.Vector2();

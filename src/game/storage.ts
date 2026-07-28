@@ -16,6 +16,14 @@ export interface Profile {
   /** 0 = raw physics, 1 = fully assisted. */
   assist: number;
   quality: 'low' | 'medium' | 'high';
+  /**
+   * Render scale, 0.5–1.
+   *
+   * Separate from the quality preset because it is the one performance knob
+   * that trades nothing but sharpness. A phone that cannot hold 60 at native
+   * resolution can drop to 0.7 and keep every effect it had.
+   */
+  resolutionScale: number;
   masterVolume: number;
   xp: number;
   credits: number;
@@ -47,6 +55,7 @@ export function defaultProfile(): Profile {
     appearance: defaultAppearance(),
     assist: 0.55,
     quality: 'high',
+    resolutionScale: 1,
     masterVolume: 0.7,
     xp: 0,
     credits: 500,
@@ -92,6 +101,11 @@ export function loadProfile(): Profile {
   if (!Array.isArray(profile.ownedGear)) profile.ownedGear = defaultProfile().ownedGear;
   if (!Array.isArray(profile.completed)) profile.completed = [];
   if (typeof profile.skinId !== 'string') profile.skinId = 'house';
+  // Profiles saved before the render scale existed have no value for it, and a
+  // missing one must read as native rather than as zero.
+  profile.resolutionScale = Number.isFinite(profile.resolutionScale)
+    ? Math.min(1, Math.max(0.5, profile.resolutionScale))
+    : 1;
   // Anything other than a well-formed entitlement counts as not owning it.
   profile.pass =
     profile.pass && typeof profile.pass === 'object' && profile.pass.owned === true

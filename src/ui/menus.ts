@@ -635,6 +635,23 @@ export class Shell {
             },
           ),
         ]),
+        el('p', { class: 'help' }, [
+          'Quality picks the anti-aliasing too: High takes four samples, Medium two, ' +
+            'and Low uses a single cheap edge pass instead. Render scale is separate — ' +
+            'it draws the world smaller and stretches it up, which buys frame rate ' +
+            'without giving up any effect.',
+        ]),
+        slider('Render scale', {
+          min: 0.5,
+          max: 1,
+          step: 0.05,
+          value: this.profile.resolutionScale,
+          format: (v) => (v >= 0.999 ? 'Native' : `${Math.round(v * 100)}%`),
+          onInput: (v) => {
+            this.profile.resolutionScale = v;
+            this.handlers.onProfileChanged();
+          },
+        }),
         el('div', { class: 'field' }, [
           el('span', { class: 'field-label' }, ['CAMERA']),
           segmented<CameraMode>(
