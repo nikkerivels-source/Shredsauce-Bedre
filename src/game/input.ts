@@ -102,6 +102,12 @@ export class InputManager {
   private weightAxis = 0;
   private twistAxis = 0;
   private crouchAxis = 0;
+  // The air axes get the same treatment, and the same constants as the ground
+  // axis each one replaces. A binary key must not read like a stick slammed to
+  // the stop.
+  private airYawAxis = 0;
+  private airPitchAxis = 0;
+  private airRollAxis = 0;
 
   constructor(target: HTMLElement, discipline: Discipline, settings?: InputSettings) {
     this.discipline = discipline;
@@ -257,12 +263,36 @@ export class InputManager {
     let airRoll = 0;
 
     // --- Keyboard ---
-    if (this.keys.has('leanLeft')) leanTarget -= 1;
-    if (this.keys.has('leanRight')) leanTarget += 1;
-    if (this.keys.has('weightNose')) weightTarget += 1;
-    if (this.keys.has('weightTail')) weightTarget -= 1;
-    if (this.keys.has('twistLeft')) twistTarget -= 1;
-    if (this.keys.has('twistRight')) twistTarget += 1;
+    //
+    // The same three key pairs mean different things depending on whether the
+    // gear is on the snow, and that is the whole point. Grounded they lean,
+    // weight and twist exactly as they always have. Airborne they drive yaw,
+    // pitch and roll — the three independent rotation axes the game is built
+    // around, and which the keyboard previously had no access to at all. A
+    // keyboard player could wind a spin up on the ground and ride it out
+    // ballistically, but could not start, steer, tighten or correct a rotation
+    // once the skis left the snow. Gamepad and touch could.
+    //
+    // One branch, not two copies: the raw key state is read once and routed.
+    const kbLean = (this.keys.has('leanRight') ? 1 : 0) - (this.keys.has('leanLeft') ? 1 : 0);
+    const kbWeight = (this.keys.has('weightNose') ? 1 : 0) - (this.keys.has('weightTail') ? 1 : 0);
+    const kbTwist = (this.keys.has('twistRight') ? 1 : 0) - (this.keys.has('twistLeft') ? 1 : 0);
+
+    let kbAirYaw = 0;
+    let kbAirPitch = 0;
+    let kbAirRoll = 0;
+    if (airborne) {
+      kbAirYaw = kbLean;
+      // Tail-weight keys rotate front, nose-weight keys rotate back, which is
+      // the same sense as dragging a thumb down the screen.
+      kbAirPitch = this.settings.invertAirPitch ? kbWeight : -kbWeight;
+      kbAirRoll = kbTwist;
+    } else {
+      leanTarget += kbLean;
+      weightTarget += kbWeight;
+      twistTarget += kbTwist;
+    }
+
     if (this.keys.has('crouch')) crouchTarget = 1;
     if (this.keys.has('tuck')) tuck = 1;
     if (this.keys.has('plant')) plant = 1;
@@ -326,6 +356,9 @@ export class InputManager {
     this.leanAxis = damp(this.leanAxis, leanTarget, 16, dt);
     this.weightAxis = damp(this.weightAxis, weightTarget, 12, dt);
     this.twistAxis = damp(this.twistAxis, twistTarget, 14, dt);
+    this.airYawAxis = damp(this.airYawAxis, kbAirYaw, 16, dt);
+    this.airPitchAxis = damp(this.airPitchAxis, kbAirPitch, 12, dt);
+    this.airRollAxis = damp(this.airRollAxis, kbAirRoll, 14, dt);
     // Loading is fast, releasing is instant — that is what makes a pop snap.
     this.crouchAxis =
       crouchTarget > this.crouchAxis ? damp(this.crouchAxis, crouchTarget, 22, dt) : crouchTarget;
@@ -341,9 +374,9 @@ export class InputManager {
     i.crouch = this.crouchAxis;
     i.tuck = clamp01(tuck);
     i.grab = grab;
-    i.airYaw = clamp(airYaw, -1, 1);
-    i.airPitch = clamp(airPitch, -1, 1);
-    i.airRoll = clamp(airRoll + this.twistAxis * (airborne ? 0.6 : 0), -1, 1);
+    i.airYaw = clamp(airYaw + this.airYawAxis, -1, 1);
+    i.airPitch = clamp(airPitch + this.airPitchAxis, -1, 1);
+    i.airRoll = clamp(airRoll + this.airRollAxis + this.twistAxis * (airborne ? 0.6 : 0), -1, 1);
     i.grind = this.crouchAxis < 0.5;
     i.plant = clamp01(plant);
     return i;

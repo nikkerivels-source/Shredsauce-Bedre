@@ -671,8 +671,12 @@ export class Shell {
             'drag it to pick which grab.',
         ]),
         el('p', { class: 'help' }, [
-          'Keyboard: A/D lean · W/S weight · Q/E wind up rotation · Space load and pop · ' +
+          'Keyboard, on the snow: A/D lean · W/S weight · Q/E wind up rotation · Space load and pop · ' +
             'F plant a pole · Shift tuck · Z X C V G H grabs · R reset · T camera · P photo.',
+        ]),
+        el('p', { class: 'help' }, [
+          'Keyboard, in the air: the same three pairs steer the three rotation axes — ' +
+            'A/D spin · W/S flip · Q/E side flip. Hold two together and the rotation goes off axis.',
         ]),
       ]),
       el('div', { class: 'settings-block' }, [
