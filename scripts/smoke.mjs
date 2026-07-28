@@ -143,15 +143,27 @@ try {
   if (!/STEP 1 OF/.test(coachStep ?? '')) failures.push(`tutorial did not start at step 1 (${coachStep})`);
   if (wantShots) await page.screenshot({ path: join(shotDir, 'shot-tutorial.png') });
 
-  // First step is "get up to 25 km/h", which gravity alone satisfies. Software
-  // GL runs the sim in slow motion — dt is clamped for stability rather than
-  // letting the rider tunnel — so allow generous wall-clock time here.
-  await page.waitForTimeout(9000);
+  // First step is "get up to 25 km/h", which gravity alone satisfies given
+  // enough *simulated* time.
+  //
+  // This used to wait a flat nine seconds of wall clock, which quietly made it a
+  // frame-rate test: there is no GPU here, the whole game runs at a tenth of
+  // real time on a software rasteriser, and nine seconds of waiting buys about
+  // one second of riding. It passed for as long as one second was enough and
+  // then started failing on a rendering change that had nothing to do with the
+  // tutorial. Poll for the thing actually being asserted instead, and give it a
+  // deadline generous enough to survive whatever the rasteriser is doing.
+  let advanced = coachStep;
+  const tutorialDeadline = Date.now() + 60000;
+  while (Date.now() < tutorialDeadline) {
+    await page.waitForTimeout(500);
+    advanced = await page.locator('.coach-step').textContent();
+    if (advanced !== coachStep) break;
+  }
   const tutSpeed = await page.locator('.speed-value').textContent();
   const tutTime = await page.locator('.timer-value').textContent();
   console.log(`  tutorial run: ${tutSpeed} km/h at ${tutTime}`);
-  const advanced = await page.locator('.coach-step').textContent();
-  if (advanced === coachStep) failures.push('tutorial never advanced past the first step');
+  if (advanced === coachStep) failures.push(`tutorial never advanced past the first step (reached ${tutSpeed} km/h)`);
   else console.log(`✓ tutorial advanced — ${advanced}`);
 
   await page.keyboard.press('Escape');
