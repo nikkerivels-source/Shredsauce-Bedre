@@ -26,12 +26,11 @@ import { kicker } from '../src/game/design.ts';
  * trick namer, and measure how much rotation each key actually buys, because a
  * key that reaches the axis but moves nothing is not a fix.
  *
- * What the flight numbers are NOT is a spin the size of a competition trick.
- * The air torque gains and the `airBudget` reservoir that meters them are
- * deliberately untouched here, and between them they cap a standing-start
- * keyboard rotation at well under half a turn. Retuning that is its own job;
- * the measured ceilings are recorded against each case below so the day the
- * gains change, the numbers that have to move are already written down.
+ * These assert direction and separation from a hands-off run, not the size of
+ * the rotation. How much a full draw is worth is a different question with its
+ * own tuning, its own reference jump and its own tests, in air-feel.test.ts —
+ * so the numbers recorded in the comments here are what each key was measured
+ * at, and the assertions stay well clear of them.
  */
 
 const KICKER_Z = 90;
@@ -290,8 +289,8 @@ describe('keyboard air axes — in flight', () => {
   });
 
   it('turns the rider about the world vertical, the way the key points', () => {
-    // Target for this case is a full 360. Measured at the current gains:
-    // +46 deg right, -37 deg left, against +3 deg for hands off.
+    // Measured after the T9 retune: +293 deg right, -278 left, against +3 for
+    // hands off. Before it, the same keys were worth 46 and -37.
     const right = ride({ air: ['ArrowRight'] });
     const left = ride({ air: ['ArrowLeft'] });
     expect(right.yaw).toBeGreaterThan(25);
@@ -301,7 +300,8 @@ describe('keyboard air axes — in flight', () => {
   });
 
   it('somersaults the rider about its own lateral axis, the way the key points', () => {
-    // Measured: +146 deg on ArrowDown and +44 on ArrowUp, against +85 hands off.
+    // Measured after T9: +368 deg on ArrowDown and -232 on ArrowUp, against +85
+    // hands off.
     const front = ride({ air: ['ArrowDown'] });
     const back = ride({ air: ['ArrowUp'] });
     expect(front.pitch - quiet.pitch).toBeGreaterThan(35);
@@ -309,8 +309,8 @@ describe('keyboard air axes — in flight', () => {
   });
 
   it('rotates the rider about its own fore-aft axis — the side-flip the keyboard never had', () => {
-    // Target for this case is a flatspin past 540 deg. Measured: +64 deg on
-    // KeyE and -17 on KeyQ, against +21 hands off.
+    // Measured after T9: +236 deg on KeyE and -227 on KeyQ, against +21 hands
+    // off. This is the axis a cork is built on.
     const clockwise = ride({ air: ['KeyE'] });
     const anticlockwise = ride({ air: ['KeyQ'] });
     expect(clockwise.roll - quiet.roll).toBeGreaterThan(25);

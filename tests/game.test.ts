@@ -70,7 +70,11 @@ describe('level format', () => {
 });
 
 describe('presets', () => {
-  it('every preset bakes and is rideable', () => {
+  // Bakes ten full mountains, which is seconds of real work rather than the
+  // milliseconds vitest assumes by default. It was already close to the 5 s
+  // limit and tipped over it once the air-feel suite started competing for the
+  // same cores.
+  it('every preset bakes and is rideable', { timeout: 30_000 }, () => {
     for (const preset of PRESETS) {
       const level = preset.build();
       const baker = new TerrainBaker(level);

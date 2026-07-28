@@ -155,6 +155,27 @@ export interface Telemetry {
   bailReason: string;
 }
 
+/**
+ * Air rotation gains, as multiples of the axis inertia.
+ *
+ * Written as a rate command rather than a torque: because the scale carries the
+ * inertia, the delivered change in angular velocity comes out the same whatever
+ * the gear weighs, and the swing-weight difference between a park ski and a
+ * big-mountain ski shows up where it belongs — in how hard it is to *stop* the
+ * rotation — instead of in whether the trick is possible at all.
+ *
+ * Measured on the reference jump documented above `applyControlTorques`.
+ */
+const AIR_GAIN_YAW = 15;
+const AIR_GAIN_PITCH = 10;
+const AIR_GAIN_ROLL = 14;
+/** How fast a held key spends its reservoir, per second. */
+const AIR_FILL = 1.1;
+/** Reservoir recovery while the axis is being pushed, per second. */
+const AIR_RELAX_HELD = 0.55;
+/** Reservoir recovery while the axis is released, per second. */
+const AIR_RELAX_FREE = 6;
+
 const CONTACT_SAMPLES: number = 11;
 const SUBSTEP = 1 / 240;
 const MAX_SUBSTEPS = 8;
@@ -1208,6 +1229,48 @@ export class RiderSim {
   // Control
   // -------------------------------------------------------------------------
 
+  /**
+   * Steering, on the snow and in the air.
+   *
+   * ## The air model, and the numbers it is tuned to
+   *
+   * A rider in the air is a closed system. Nothing outside the body can add
+   * angular momentum to it, so the only honest way to let a player rotate is to
+   * let them trade: wind one part of the body against another, and the rest of
+   * the body turns the other way. That is what `airBudget` is. Each axis holds a
+   * signed reservoir, pushing spends it, and once it is spent that direction is
+   * finished until the body unwinds. It is not a stamina bar and it is not a
+   * cooldown — it is the reason a real skier cannot keep adding rotation
+   * forever, and removing it would make the whole simulation a lie.
+   *
+   * What the reservoir does *not* decide is how much rotation one full draw is
+   * worth. That is `AIR_GAIN_*`, and it is a feel number rather than a physical
+   * one, so it is set from a measurement rather than from an argument.
+   *
+   * The reference jump, which every one of these numbers was measured against:
+   * a 6 m table, 40 km/h at the lip, stock park snowboard, keyboard only, no
+   * rotation wound up on the ground, popped cleanly. That is 1.9 seconds of air.
+   *
+   *   540  reachable    — hold the spin key off the lip and ride it out
+   *   720  hard         — needs the reservoir released and drawn a second time,
+   *                       and only some release timings get there
+   *   1080 unreachable  — 653 deg is the best of sixty hold-and-pump timings,
+   *                       and 1080 needs 990
+   *
+   * `AIR_FILL` sets how fast a held key spends the reservoir: at 1.1 per second
+   * it empties over roughly 0.9 s, so holding from the lip is the natural play
+   * rather than a tap at exactly the right instant, and it is worth one clean
+   * 540. Everything above that has to come from `AIR_RELAX_FREE` — letting the
+   * axis go, letting the body unwind, and going again inside the same air.
+   *
+   * A cork 5 lands with spin and side-flip held together off the lip. That is
+   * the trick the whole control model exists to produce, so it is the one the
+   * roll gain is set by: at 12 it comes out a 360, at 14 a 540.
+   *
+   * If these targets are ever re-measured, re-measure them on that jump. A
+   * different lip, a different speed or a different board is a different number
+   * and proves nothing about this one.
+   */
   private applyControlTorques(dt: number, input: RiderInput, contactForce: number): void {
     const grounded = contactForce > 60;
 
@@ -1233,10 +1296,19 @@ export class RiderSim {
     // of nothing, so every axis draws down a reservoir that recovers slowly.
     const I = this.currentInertia;
     const authority = 1 - this.tuning.assist * 0.15;
-    this.applyAirAxis(dt, this.sBodyUp, input.airYaw, 2.9 * I.y, 'y', authority);
-    this.applyAirAxis(dt, this.sBodyRight, input.airPitch, 1.9 * I.x, 'x', authority);
-    this.applyAirAxis(dt, this.sBodyFwd, input.airRoll, 1.9 * I.z, 'z', authority);
-    this.airBudget.scale(Math.exp(-0.55 * dt));
+    this.applyAirAxis(dt, this.sBodyUp, input.airYaw, AIR_GAIN_YAW * I.y, 'y', authority);
+    this.applyAirAxis(dt, this.sBodyRight, input.airPitch, AIR_GAIN_PITCH * I.x, 'x', authority);
+    this.applyAirAxis(dt, this.sBodyFwd, input.airRoll, AIR_GAIN_ROLL * I.z, 'z', authority);
+
+    // Unwinding recovers the reservoir, and it recovers faster on an axis the
+    // rider is not currently pushing. That is what separates a 540 from a 720:
+    // hold the key from the lip and you get one full draw, which is a clean 540
+    // and nothing more. Let go, let the body come back, and go again, and there
+    // is a second draw in it — but only if the air is long enough and the timing
+    // is right, which is exactly where the difficulty of a 720 should live.
+    this.relaxAirAxis(dt, 'y', input.airYaw);
+    this.relaxAirAxis(dt, 'x', input.airPitch);
+    this.relaxAirAxis(dt, 'z', input.airRoll);
   }
 
   /**
@@ -1275,6 +1347,24 @@ export class RiderSim {
 
   private prevBeta = 0;
 
+  /**
+   * Bleeds one axis of the reservoir back toward neutral.
+   *
+   * Held, it barely recovers — you cannot push against a body that is already
+   * wound out. Released, it comes back several times faster, because letting the
+   * limbs return is the whole mechanism.
+   */
+  private relaxAirAxis(dt: number, key: 'x' | 'y' | 'z', command: number): void {
+    // Blended rather than switched. The key is smoothed on its way in, so it
+    // spends a tenth of a second on the way down through any threshold you pick,
+    // and a hard cut-off there decides the whole feel of a pumped rotation on
+    // rounding. How much the body is still pushing is a quantity, so treat it
+    // as one.
+    const push = Math.min(1, Math.abs(command));
+    const rate = AIR_RELAX_FREE + (AIR_RELAX_HELD - AIR_RELAX_FREE) * push;
+    this.airBudget[key] *= Math.exp(-rate * dt);
+  }
+
   private applyAirAxis(
     dt: number,
     axis: Vec3,
@@ -1291,7 +1381,7 @@ export class RiderSim {
     if (headroom <= 0.001) return;
     const torque = command * scale * headroom * authority;
     this.sTorque.addScaled(axis, torque);
-    this.airBudget[key] = clamp(used + command * dt * 1.5, -1, 1);
+    this.airBudget[key] = clamp(used + command * dt * AIR_FILL, -1, 1);
   }
 
   // -------------------------------------------------------------------------
