@@ -21,8 +21,16 @@ npm run server       # optional: live sessions on ws://localhost:8787
 ```bash
 npm test             # 78 unit tests (physics, tricks, level design, editor, replays)
 npm run build        # typecheck + production bundle into dist/
+npm run bundle       # the whole game as one openable bluebird.html
 node scripts/smoke.mjs --shots   # drives the built game in a real browser
 ```
+
+`npm run bundle` inlines the stylesheet and every module into a single
+document. The normal `dist/` output is a static site and does nothing opened
+straight off disk, because `file://` refuses cross-origin module fetches; an
+*inline* module script has nothing to fetch, so the bundled file runs by
+double-clicking it. No install, no server, no network — the whole game, the ten
+mountains and the editor included, is one 0.8 MB HTML file.
 
 ---
 

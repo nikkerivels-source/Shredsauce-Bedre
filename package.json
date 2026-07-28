@@ -14,7 +14,8 @@
     "server": "node server/index.js",
     "start": "npm run build && concurrently \"npm run preview\" \"npm run server\"",
     "test:smoke": "npm run build && node scripts/smoke.mjs",
-    "test:all": "npm test && npm run test:smoke"
+    "test:all": "npm test && npm run test:smoke",
+    "bundle": "node scripts/bundle-single.mjs"
   },
   "dependencies": {
     "three": "^0.185.1"

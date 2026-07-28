@@ -4,3 +4,8 @@ dist/
 .DS_Store
 .vite/
 shot-*.png
+
+# Single-file build output and its smoke shot.
+bluebird.html
+filetest.png
+.single-build/
