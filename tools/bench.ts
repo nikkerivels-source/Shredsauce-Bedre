@@ -154,7 +154,10 @@ async function run(): Promise<BenchReport> {
   // puts them — which draws as a wedge across half the frame. Half a second of
   // simulation settles it; after that nothing moves again, on any run.
   const gear = getGear(level.discipline === 'skis' ? 'twin-172' : 'park-155');
-  view.setRider(gear, defaultAppearance());
+  const look = defaultAppearance();
+  const jacket = params.get('jacket');
+  if (jacket) look.jacket = jacket;
+  view.setRider(gear, look);
   const sim = new RiderSim(field, level, grinds, gear, defaultTuning());
   sim.reset(level.spawn.x, level.spawn.z, level.spawn.heading);
   const still = neutralInput();

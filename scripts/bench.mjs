@@ -37,6 +37,7 @@ const preset = arg('preset', 'high');
 const level = arg('level', 'superpark');
 const weather = arg('weather', 'clear');
 const frames = arg('frames', '120');
+const jacket = arg('jacket', '');
 const width = Number(arg('w', 1920));
 const height = Number(arg('h', 1080));
 // A private build directory per run. Two benches sharing one would race on the
@@ -103,7 +104,9 @@ for (const shot of shots) {
   // bundle would quietly benchmark the previous commit.
   const url =
     `${base}?preset=${preset}&level=${level}&view=${shot}&weather=${weather}` +
-    `&frames=${frames}&w=${width}&h=${height}&cb=${Date.now()}`;
+    `&frames=${frames}&w=${width}&h=${height}` +
+    (jacket ? `&jacket=${encodeURIComponent(jacket)}` : '') +
+    `&cb=${Date.now()}`;
   await page.goto(url, { waitUntil: 'load' });
   const report = await page.evaluate(() => window.benchReady, { timeout: 180_000 });
   if (errors.length > 0) throw new Error(`${shot}: ${errors.join(' | ')}`);

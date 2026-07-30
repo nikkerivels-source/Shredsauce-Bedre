@@ -151,8 +151,25 @@ export class WorldView {
     // PCFSoft is deprecated in current three and silently downgrades to PCF
     // while warning on every boot. Ask for what we actually get.
     this.renderer.shadowMap.type = THREE.PCFShadowMap;
-    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.22;
+    // No tone mapping, and let the snow clip.
+    //
+    // Note for anyone reading this next to the render target in post.ts: three
+    // only applies `renderer.toneMapping` when it is drawing to the default
+    // framebuffer. Rendering into a target sets NoToneMapping regardless, on the
+    // assumption the post chain will do it. So from the moment the scene started
+    // going through a target, the ACES setting this line used to hold had no
+    // effect at all — the code said one thing and every frame did another. It
+    // now says what it does.
+    //
+    // ACES has a strong highlight shoulder and desaturates saturated colour as
+    // it brightens, which is the opposite of what this game wants: it turned
+    // near-white snow creamy and pulled a saturated jacket toward grey exactly
+    // where the sun hit it hardest. The 1.22 exposure made it worse by pushing
+    // more of the frame into the shoulder. Clipped white is the correct look for
+    // a flat, fully saturated, bluebird-day style — the highlight is not
+    // information here, the hue is.
+    this.renderer.toneMapping = THREE.NoToneMapping;
+    this.renderer.toneMappingExposure = 1;
 
     this.output = new OutputChain(outputSettings(quality));
     this.rig = new CameraRig(field);
