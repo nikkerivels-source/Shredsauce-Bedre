@@ -223,12 +223,27 @@ describe('T9 — air rotation feel', () => {
     expect(bestYaw).toBeLessThan(900);
   });
 
-  it('lands a cork 5 — spin and side flip together off the lip', () => {
+  it('lands a cork — spin and side flip together off the lip', () => {
+    // A cork 3 on this jump, not a cork 5. It used to be a 540 because the roll
+    // axis carried nearly as much authority as the yaw axis, and holding one
+    // roll key through a long air produced a *triple* flip. Roll is now weaker
+    // than yaw on purpose, which is what a skier actually has, and the cost is
+    // that a corked 540 wants a bigger jump than a 6 m table.
     const run = ride({ runIn, keys: ['ArrowRight', 'KeyE'] });
-    expect(run.trick?.spin).toBe(540);
+    expect(run.trick?.spin).toBe(360);
     expect(run.trick?.inversions).toBeGreaterThanOrEqual(1);
     expect(run.trick?.name).toMatch(/cork/);
     expect(run.trick?.landed).toBe(true);
+  });
+
+  it('gives the roll axis less authority than the yaw axis', () => {
+    // Holding roll for a whole air must not out-produce holding yaw for the
+    // same air, or a Lincoln is as easy to throw as a 360 and the axis stops
+    // meaning anything. At the old gain of 14 one roll key was worth three
+    // flips; it is now worth one.
+    const spin = ride({ runIn, keys: ['ArrowRight'] });
+    const lincoln = ride({ runIn, keys: ['KeyE'] });
+    expect((lincoln.trick?.inversions ?? 0) * 360).toBeLessThanOrEqual(Math.abs(spin.trick?.spin ?? 0));
   });
 
   it('still cannot manufacture rotation from nothing', () => {

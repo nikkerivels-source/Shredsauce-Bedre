@@ -168,7 +168,7 @@ export interface Telemetry {
  */
 const AIR_GAIN_YAW = 15;
 const AIR_GAIN_PITCH = 10;
-const AIR_GAIN_ROLL = 14;
+const AIR_GAIN_ROLL = 10;
 /** How fast a held key spends its reservoir, per second. */
 const AIR_FILL = 1.1;
 /** Reservoir recovery while the axis is being pushed, per second. */
