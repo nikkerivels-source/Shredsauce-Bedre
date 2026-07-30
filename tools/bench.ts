@@ -158,9 +158,14 @@ async function run(): Promise<BenchReport> {
   // puts them — which draws as a wedge across half the frame. Half a second of
   // simulation settles it; after that nothing moves again, on any run.
   const gear = getGear(level.discipline === 'skis' ? 'twin-172' : 'park-155');
+  // Any appearance slot can be overridden from the query string, because the
+  // point of a slot is that it is independent and the only way to show that is
+  // to set one and look at the picture.
   const look = defaultAppearance();
-  const jacket = params.get('jacket');
-  if (jacket) look.jacket = jacket;
+  for (const key of Object.keys(look) as (keyof typeof look)[]) {
+    const value = params.get(key);
+    if (value) look[key] = value.startsWith('#') ? value : `#${value}`;
+  }
   view.setRider(gear, look);
   const sim = new RiderSim(field, level, grinds, gear, defaultTuning());
   sim.reset(level.spawn.x, level.spawn.z, level.spawn.heading);

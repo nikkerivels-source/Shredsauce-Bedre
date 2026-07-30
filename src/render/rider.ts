@@ -7,6 +7,18 @@ export interface RiderAppearance {
   pants: string;
   helmet: string;
   goggles: string;
+  /**
+   * Gloves and boots.
+   *
+   * These were drawn in the goggle colour — not as a stylistic link, but
+   * because the material lookup takes an appearance key and `goggles` was the
+   * nearest dark one to hand. The result was that the two things a skier is
+   * most reliably wearing in black could not be black unless the goggle lens
+   * was too, and every reference photo shows the opposite: black gloves, a
+   * warm bright lens. They are their own slots now.
+   */
+  gloves: string;
+  boots: string;
   board: string;
   skin: string;
 }
@@ -18,6 +30,8 @@ export function defaultAppearance(): RiderAppearance {
     pants: '#e0622a',
     helmet: '#1a1d23',
     goggles: '#101318',
+    gloves: '#16181c',
+    boots: '#2a2e35',
     board: '#3f97e0',
     skin: '#c99b76',
   };
@@ -37,6 +51,17 @@ interface LimbSpec {
 }
 
 /**
+ * Sleeve radius where it meets the hand, and the glove that has to clear it.
+ *
+ * Named and exported because the relationship between them is a correctness
+ * property, not a style choice: a glove smaller than the cuff and concentric
+ * with it is invisible, and an invisible mesh with its own colour slot is a
+ * control that does nothing. `tests/identity.test.ts` holds them apart.
+ */
+export const CUFF_RADIUS = 0.072;
+export const GLOVE_RADIUS = 0.088;
+
+/**
  * Limbs.
  *
  * Freeski outerwear is deliberately oversized — a shell two sizes too big, pants
@@ -54,8 +79,8 @@ const LIMBS: LimbSpec[] = [
   // only the gloves tell you where the arms end.
   { a: J.shoulderL, b: J.elbowL, from: 0.12, to: 0.104, key: 'jacket' },
   { a: J.shoulderR, b: J.elbowR, from: 0.12, to: 0.104, key: 'jacket' },
-  { a: J.elbowL, b: J.handL, from: 0.1, to: 0.072, key: 'jacket' },
-  { a: J.elbowR, b: J.handR, from: 0.1, to: 0.072, key: 'jacket' },
+  { a: J.elbowL, b: J.handL, from: 0.1, to: CUFF_RADIUS, key: 'jacket' },
+  { a: J.elbowR, b: J.handR, from: 0.1, to: CUFF_RADIUS, key: 'jacket' },
   { a: J.pelvis, b: J.hipL, from: 0.14, to: 0.135, key: 'pants' },
   { a: J.pelvis, b: J.hipR, from: 0.14, to: 0.135, key: 'pants' },
   { a: J.hipL, b: J.kneeL, from: 0.142, to: 0.126, key: 'pants' },
@@ -157,9 +182,20 @@ export class RiderMesh {
     );
     this.group.add(this.goggles);
 
-    const gloveGeo = new THREE.SphereGeometry(0.062, 8, 6);
+    // Bigger than the cuff it comes out of, which it was not.
+    //
+    // The glove was a 0.062 m sphere centred on the hand joint. The forearm
+    // ends at that same joint with a radius of 0.072, and a joint cap sphere of
+    // radius 0.072 is drawn there too — so the glove was a smaller sphere
+    // concentric with a larger one and had never been visible in any frame the
+    // game has ever drawn. Painting it magenta and finding no magenta anywhere
+    // in a 1920x1080 shot is what turned that from a suspicion into a fact.
+    //
+    // 0.088 puts it clearly proud of the cuff, which is also what a ski glove
+    // does: it is bulkier than the sleeve, not thinner.
+    const gloveGeo = new THREE.SphereGeometry(GLOVE_RADIUS, 9, 7);
     for (let i = 0; i < 2; i++) {
-      const glove = new THREE.Mesh(gloveGeo, mat('goggles', { roughness: 0.8, metalness: 0 }));
+      const glove = new THREE.Mesh(gloveGeo, mat('gloves', { roughness: 0.8, metalness: 0 }));
       glove.castShadow = !ghost;
       this.gloves.push(glove);
       this.group.add(glove);
@@ -171,7 +207,7 @@ export class RiderMesh {
     const bootGeo = new THREE.BoxGeometry(0.15, 0.28, 0.3);
     bootGeo.translate(0, 0.055, 0);
     for (let i = 0; i < 2; i++) {
-      const boot = new THREE.Mesh(bootGeo, mat('goggles', { roughness: 0.42, metalness: 0.08 }));
+      const boot = new THREE.Mesh(bootGeo, mat('boots', { roughness: 0.42, metalness: 0.08 }));
       boot.castShadow = !ghost;
       this.boots.push(boot);
       this.group.add(boot);
@@ -228,9 +264,12 @@ export class RiderMesh {
       );
       grip.position.y = -0.06;
 
+      // Strap and basket follow the gloves, not the goggles. A pole strap goes
+      // round the wrist and is the same webbing as the glove cuff in every
+      // photograph; keying it to the lens was the same mistake as the gloves.
       const strap = new THREE.Mesh(
         new THREE.TorusGeometry(0.035, 0.006, 5, 10),
-        this.mat('goggles', { roughness: 0.9, metalness: 0 }),
+        this.mat('gloves', { roughness: 0.9, metalness: 0 }),
       );
       strap.rotation.x = Math.PI / 2;
       strap.rotation.z = 0.5;
@@ -240,7 +279,7 @@ export class RiderMesh {
       // soft snow — it is the detail that makes a pole read as a ski pole.
       const basket = new THREE.Mesh(
         new THREE.CylinderGeometry(0.052, 0.052, 0.014, 10),
-        this.mat('goggles', { roughness: 0.85, metalness: 0 }),
+        this.mat('gloves', { roughness: 0.85, metalness: 0 }),
       );
       basket.position.y = -1.04;
 

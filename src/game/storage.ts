@@ -189,11 +189,35 @@ export function migrateProfile(stored: Partial<Profile>): Profile {
   return profile;
 }
 
+/**
+ * Brings a stored appearance up to the current slot list.
+ *
+ * Gloves and boots used to be drawn in the goggle colour. Splitting them into
+ * their own slots is a fix, but it is also a change to what an existing player
+ * sees: someone who set bright blue goggles has been riding with bright blue
+ * gloves for as long as they have played, and filling the new slots with the
+ * factory black would take that away without asking.
+ *
+ * So a profile saved before the split keeps what it had — the old goggle
+ * colour is copied into both new slots — and only a profile that has never
+ * seen them gets the new defaults. The player's rider looks identical across
+ * the update; the difference is that the colours are now three things they can
+ * set instead of one thing they could not.
+ */
+export function migrateAppearance(stored: Partial<RiderAppearance> | undefined): RiderAppearance {
+  const appearance = { ...defaultAppearance(), ...(stored ?? {}) };
+  if (stored && typeof stored.goggles === 'string') {
+    if (typeof stored.gloves !== 'string') appearance.gloves = stored.goggles;
+    if (typeof stored.boots !== 'string') appearance.boots = stored.goggles;
+  }
+  return appearance;
+}
+
 export function loadProfile(): Profile {
   const stored = read<Partial<Profile>>(PROFILE_KEY, {});
   const wasCurrent = stored.schemaVersion === PROFILE_SCHEMA_VERSION;
   const profile = migrateProfile(stored);
-  profile.appearance = { ...defaultAppearance(), ...(stored.appearance ?? {}) };
+  profile.appearance = migrateAppearance(stored.appearance);
   if (!Array.isArray(profile.ownedGear)) profile.ownedGear = defaultProfile().ownedGear;
   if (!Array.isArray(profile.completed)) profile.completed = [];
   if (typeof profile.skinId !== 'string') profile.skinId = 'house';

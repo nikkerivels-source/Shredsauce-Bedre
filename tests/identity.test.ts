@@ -2,12 +2,14 @@ import { describe, expect, it, beforeEach } from 'vitest';
 import {
   PROFILE_SCHEMA_VERSION,
   defaultProfile,
+  migrateAppearance,
   migrateProfile,
   newRiderId,
   randomRiderName,
   type Profile,
 } from '../src/game/storage.ts';
 import { emptyLevel, migrateLevel, LEVEL_FORMAT_VERSION } from '../src/world/level.ts';
+import { CUFF_RADIUS, GLOVE_RADIUS, defaultAppearance, type RiderAppearance } from '../src/render/rider.ts';
 
 /**
  * Local identity.
@@ -137,5 +139,50 @@ describe('C1 — local identity', () => {
     delete old.authorId;
     old.version = 4;
     expect(migrateLevel(old).authorId).toBe('');
+  });
+
+  // --- Gloves and boots as their own slots (art direction 3e) --------------
+
+  it('gives a profile saved before the split the rider it already had', () => {
+    // Gloves and boots were drawn in the goggle colour. Somebody who chose a
+    // bright lens has been riding with bright gloves ever since, and that is
+    // what they will expect to see after the update — not the factory black.
+    const old = { jacket: '#123456', pants: '#abcdef', helmet: '#111111', goggles: '#2a6fa8', board: '#333333', skin: '#c99b76' };
+    const migrated = migrateAppearance(old as Partial<RiderAppearance>);
+    expect(migrated.gloves).toBe('#2a6fa8');
+    expect(migrated.boots).toBe('#2a6fa8');
+    expect(migrated.goggles).toBe('#2a6fa8');
+    expect(migrated.jacket).toBe('#123456');
+  });
+
+  it('gives a profile that has never seen them the new defaults', () => {
+    const fresh = migrateAppearance({ ...defaultAppearance() });
+    expect(fresh.gloves).toBe(defaultAppearance().gloves);
+    expect(fresh.boots).toBe(defaultAppearance().boots);
+    // And the defaults are the case the references show: black gloves, a lens
+    // that is free to be any colour at all.
+    expect(fresh.gloves).not.toBe(fresh.goggles);
+  });
+
+  it('leaves a chosen glove colour alone, including one equal to the goggles', () => {
+    const chosen = migrateAppearance({ ...defaultAppearance(), goggles: '#ff0000', gloves: '#00ff00', boots: '#0000ff' });
+    expect(chosen.gloves).toBe('#00ff00');
+    expect(chosen.boots).toBe('#0000ff');
+    const deliberate = migrateAppearance({ ...defaultAppearance(), goggles: '#ff0000', gloves: '#ff0000', boots: '#ff0000' });
+    expect(deliberate.gloves).toBe('#ff0000');
+  });
+
+  it('does not throw on a missing or malformed appearance', () => {
+    expect(() => migrateAppearance(undefined)).not.toThrow();
+    expect(migrateAppearance(undefined).gloves).toBe(defaultAppearance().gloves);
+    expect(migrateAppearance({} as Partial<RiderAppearance>).boots).toBe(defaultAppearance().boots);
+  });
+
+  it('keeps the glove clear of the cuff it comes out of', () => {
+    // The glove was a 0.062 m sphere concentric with a 0.072 m cuff cap: buried,
+    // and so a colour slot that could never show anything. Painting it magenta
+    // and counting the pixels in a 1920x1080 shot gave 0 before and 3,828 after.
+    // This is the cheap version of that check.
+    expect(GLOVE_RADIUS).toBeGreaterThan(CUFF_RADIUS);
   });
 });

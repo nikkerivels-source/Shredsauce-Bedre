@@ -569,6 +569,8 @@ export class Shell {
       colorField('Pants', this.profile.appearance.pants, (v) => this.setColor('pants', v)),
       colorField('Helmet', this.profile.appearance.helmet, (v) => this.setColor('helmet', v)),
       colorField('Goggles', this.profile.appearance.goggles, (v) => this.setColor('goggles', v)),
+      colorField('Gloves', this.profile.appearance.gloves, (v) => this.setColor('gloves', v)),
+      colorField('Boots', this.profile.appearance.boots, (v) => this.setColor('boots', v)),
       colorField('Base', this.profile.appearance.board, (v) => this.setColor('board', v)),
     ]);
 

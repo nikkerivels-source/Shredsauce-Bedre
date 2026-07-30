@@ -37,7 +37,10 @@ const preset = arg('preset', 'high');
 const level = arg('level', 'superpark');
 const weather = arg('weather', 'clear');
 const frames = arg('frames', '120');
-const jacket = arg('jacket', '');
+// Appearance overrides, passed straight through to the page: --jacket, --pants,
+// --gloves, --boots and so on, one flag per slot.
+const LOOK_KEYS = ['jacket', 'pants', 'helmet', 'goggles', 'gloves', 'boots', 'board', 'skin'];
+const look = LOOK_KEYS.map((k) => [k, arg(k, '')]).filter(([, v]) => v);
 const width = Number(arg('w', 1920));
 const height = Number(arg('h', 1080));
 // A private build directory per run. Two benches sharing one would race on the
@@ -105,7 +108,7 @@ for (const shot of shots) {
   const url =
     `${base}?preset=${preset}&level=${level}&view=${shot}&weather=${weather}` +
     `&frames=${frames}&w=${width}&h=${height}` +
-    (jacket ? `&jacket=${encodeURIComponent(jacket)}` : '') +
+    look.map(([k, v]) => `&${k}=${encodeURIComponent(v)}`).join('') +
     `&cb=${Date.now()}`;
   await page.goto(url, { waitUntil: 'load' });
   const report = await page.evaluate(() => window.benchReady, { timeout: 180_000 });
