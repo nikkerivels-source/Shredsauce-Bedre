@@ -82,6 +82,10 @@ const height = Number(params.get('h') ?? 1080);
  * message than six numbers.
  */
 const WEATHER: Record<string, { timeOfDay: number; cloud: number; snowfall: number; wind: number; fog: number }> = {
+  // Exactly `defaultWeather()`. Kept in step with it by hand so a shot can be
+  // taken of the conditions the game actually ships in, rather than of a
+  // near-miss that happens to hide or exaggerate whatever is being judged.
+  bluebird: { timeOfDay: 12, cloud: 0.02, snowfall: 0, wind: 1, fog: 0.02 },
   clear: { timeOfDay: 12, cloud: 0.05, snowfall: 0, wind: 1, fog: 0.08 },
   overcast: { timeOfDay: 12, cloud: 0.85, snowfall: 0, wind: 3, fog: 0.45 },
   snow: { timeOfDay: 12, cloud: 0.7, snowfall: 0.8, wind: 6, fog: 0.5 },

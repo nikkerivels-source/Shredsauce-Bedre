@@ -465,6 +465,10 @@ export const PRESETS: LevelPreset[] = [
       level.weather.timeOfDay = 17.4;
       level.weather.cloud = 0.2;
       level.weather.fog = 0.15;
+      // Pinned rather than inherited: the default is a bluebird noon now, and
+      // this mountain is the one that is supposed to look like the end of the
+      // day. Everything it needs is stated here.
+      level.weather.snowfall = 0.1;
 
       const f = level.features;
       const b = level.brushes;
@@ -606,6 +610,9 @@ export const PRESETS: LevelPreset[] = [
       level.weather.wind = 9;
       level.weather.cloud = 0.3;
       level.weather.snowfall = 0.2;
+      // Same reason as Last Light: the exposed-ridge murk is this mountain's
+      // character, so it states its own fog instead of inheriting one.
+      level.weather.fog = 0.18;
 
       const f = level.features;
       const b = level.brushes;

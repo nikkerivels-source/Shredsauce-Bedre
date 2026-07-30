@@ -73,6 +73,15 @@ function ride(opts: RunOptions): RunResult {
   level.terrain.resolution = 0.5;
   level.snow.hardness = 0.7;
   level.snow.groomed = true;
+  // Stated, not inherited.
+  //
+  // Wind is a force on an airborne rider — the sim works on airspeed relative
+  // to it, so a tailwind lowers the relative airspeed and with it the aero
+  // damping on rotation. That makes it part of the reference jump, and it was
+  // missing from the list. Dropping the default from 2 m/s to 1 breaks two
+  // rungs of the ladder below: the 720 cadences both come back 540, and the
+  // cork loses its inversion entirely. One metre per second.
+  level.weather.wind = 2;
   level.spawn = { x: 0, z: 16, heading: 0 };
   const kickerZ = 16 + opts.runIn;
   level.features.push(kicker(0, kickerZ, 6, { width: 20, lipAngle: 30, landingLength: 120, landingAngle: 30 }));

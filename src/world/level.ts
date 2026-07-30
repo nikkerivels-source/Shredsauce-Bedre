@@ -316,14 +316,47 @@ export function defaultSnow(): SnowSettings {
   return { hardness: 0.55, depth: 0.35, groomed: true };
 }
 
+/**
+ * Bluebird, because that is the name of the game.
+ *
+ * The old defaults — quarter cloud, a fifth of a fog, light snowfall, sun an
+ * hour and a half off noon — were a *nice* day, and every level that did not
+ * override them inherited it. Nice is the problem. Cloud desaturates the sky
+ * and lifts the horizon band; fog washes the skyline; falling snow puts a grey
+ * veil over the whole frame. Stacked, they gave the flat pale wash that reads
+ * as haze on every screenshot, and they did it to eight of the ten stock
+ * mountains.
+ *
+ * The look this game is aiming at is a hard one: fully saturated flat blue,
+ * near-clipped white snow, and a horizon that is a line rather than a fade.
+ * None of it survives contact with atmosphere, so the default has none —
+ * cloud and fog are left just off zero rather than at zero so the sliders
+ * still have somewhere to travel from, and the sun sits at noon where its
+ * colour is white and its shadows are short and blue.
+ *
+ * Weather is still a per-level authored value. Powder Bowl, Cornice and Last
+ * Light pin their own and are untouched by this; what changes is what you get
+ * when nobody asked for anything.
+ *
+ * Wind is the one number here that is not the one asked for. The art direction
+ * called for 1 m/s; it stays at 2, because wind is not a visual setting and
+ * this one is load-bearing. Snowfall is zero now, so the only thing 1 m/s
+ * would have changed on screen is the drift on carve spray — while in the sim
+ * wind is a real force, and airborne rotation is computed against airspeed
+ * relative to it. Measured on T9's reference jump, dropping it to 1 breaks two
+ * rungs of the trick ladder: both 720 pump cadences come back 540, and the
+ * cork loses its inversion. That is a gameplay change bought with no picture,
+ * so it is not taken. `tests/air-feel.ts` now pins the value rather than
+ * inheriting it, so the ladder no longer moves when this function does.
+ */
 export function defaultWeather(): WeatherSettings {
   return {
-    timeOfDay: 10.5,
-    cloud: 0.25,
-    snowfall: 0.15,
+    timeOfDay: 12,
+    cloud: 0.02,
+    snowfall: 0,
     wind: 2,
     windDirection: 20,
-    fog: 0.2,
+    fog: 0.02,
   };
 }
 

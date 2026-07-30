@@ -272,6 +272,16 @@ export interface SkyRig {
 
 const WHITE = new THREE.Color(0xffffff);
 
+/**
+ * Haze at which the horizon is fully washed out.
+ *
+ * Above this the horizon colour is the pale one the shader has always used;
+ * below it, it closes on the zenith colour, and at zero the sky is one flat
+ * blue. 0.6 is roughly "properly overcast" — cloud 0.7, or cloud 0.5 with a
+ * third of a fog.
+ */
+const HAZE_FULL_WASH = 0.6;
+
 export function createSky(scene: THREE.Scene, level: LevelDef): SkyRig {
   const uniforms = {
     uTopColor: { value: new THREE.Color(0x2f6bd8) },
@@ -311,8 +321,22 @@ export function createSky(scene: THREE.Scene, level: LevelDef): SkyRig {
 
       void main() {
         vec3 dir = normalize(vDir);
-        float h = clamp(dir.y * 0.5 + 0.5, 0.0, 1.0);
-        vec3 sky = mix(uHorizonColor, uTopColor, pow(h, 0.75));
+
+        // Horizon colour at the horizon, zenith colour at the zenith.
+        //
+        // The old curve was pow(dir.y*0.5+0.5, 0.75), which is 60% of the way
+        // to the zenith colour *at* the horizon: the two endpoint colours never
+        // appeared where they were named, and the ramp did not finish until
+        // straight up. This one starts and ends where it says, with the change
+        // packed into the low part of the sky, which is where real atmosphere
+        // puts it.
+        //
+        // How *visible* the ramp is does not live here — that is the distance
+        // between the two colours, and on a clear day uHorizonColor is now
+        // nearly uTopColor, so this evaluates to a flat sky no matter what
+        // shape it is. Weather opens the two apart and the wash appears.
+        float k = pow(clamp(dir.y, 0.0, 1.0), 0.55);
+        vec3 sky = mix(uHorizonColor, uTopColor, k);
 
         // Sun disc plus a wide forward-scattering glow through the haze.
         float cosAngle = dot(dir, normalize(uSunDirection));
@@ -453,9 +477,46 @@ export function createSky(scene: THREE.Scene, level: LevelDef): SkyRig {
       const warmth = 1 - clamp01(Math.sin(elevation) / 0.6);
       const sunColor = new THREE.Color().setHSL(lerp(0.12, 0.07, warmth), lerp(0.25, 0.75, warmth), 0.62);
       uniforms.uSunColor.value.copy(sunColor);
-      uniforms.uTopColor.value.setHSL(0.60, lerp(0.75, 0.15, w.cloud), lerp(0.42, 0.72, w.cloud));
-      uniforms.uHorizonColor.value.setHSL(0.58, lerp(0.35, 0.06, w.cloud), lerp(0.86, 0.83, w.cloud));
-      uniforms.uHaze.value = clamp01(w.cloud * 0.7 + w.fog * 0.5);
+      const topSat = lerp(0.75, 0.15, w.cloud);
+      const topLum = lerp(0.42, 0.72, w.cloud);
+      uniforms.uTopColor.value.setHSL(0.6, topSat, topLum);
+
+      // The horizon colour is the whole horizon-haze control.
+      //
+      // It used to be a fixed near-white — saturation 0.35, luminance 0.86 —
+      // against a zenith at 0.75 and 0.42, on every level, in every weather.
+      //
+      // The measurement is worth stating precisely, because the obvious guess
+      // about it is wrong. Sampling a 1080p frame, the colour distance between
+      // the sky just above the skyline and the sky at the top of the frame was
+      // only 17-21 of 255: the *gradient* inside the visible sky was never
+      // steep. What was wrong was where the whole thing sat. Because the ramp
+      // is anchored at that near-white and the visible sky is the bottom
+      // fraction of it, every pixel of sky was dragged toward the pale end —
+      // measured at rgb(180,205,234) above the skyline, a blue-minus-red of 54.
+      // Not a wash climbing out of the horizon so much as a sky that had been
+      // mixed with fog before it was ever drawn.
+      //
+      // So the pale colour is now something weather buys. At zero haze the
+      // horizon is the zenith, opened a little — real clear sky does lighten
+      // and desaturate slightly toward the horizon, and killing that outright
+      // looks like a painted wall rather than a sky. Same frame afterwards:
+      // rgb(145,197,233), blue-minus-red 88, two thirds more separation, with
+      // the near-skyline-to-top distance down to 15. Flat, and blue.
+      //
+      // The skyline itself was already a hard edge and stays one: the terrain
+      // silhouette measures a single pixel plus its antialiasing in both. What
+      // changed is that there is now something for it to be an edge *between*.
+      // By HAZE_FULL_WASH the horizon is back to the old near-white, so
+      // overcast, snow and dusk are unchanged.
+      const haze = clamp01(w.cloud * 0.7 + w.fog * 0.5);
+      uniforms.uHaze.value = haze;
+      const wash = clamp01(haze / HAZE_FULL_WASH);
+      uniforms.uHorizonColor.value.setHSL(
+        0.58,
+        lerp(topSat * 0.82, lerp(0.35, 0.06, w.cloud), wash),
+        lerp(Math.min(0.95, topLum + 0.11), lerp(0.86, 0.83, w.cloud), wash),
+      );
 
       sun.position.copy(dir).multiplyScalar(180);
       sun.intensity = lerp(3.1, 0.55, w.cloud) * lerp(0.35, 1, clamp01(Math.sin(elevation) * 2));
