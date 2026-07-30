@@ -13,3 +13,7 @@ filetest.png
 # Render bench: per-run build directory and captured shots.
 .bench-build-*/
 shots/
+# Scratch output. The bench used to join a relative --out onto the repo root,
+# which quietly wrote a tree of screenshots in here; the path handling is fixed
+# but a stray scratch directory is not something to commit if it comes back.
+tmp/
