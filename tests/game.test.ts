@@ -23,7 +23,18 @@ import { cliffBand, jumpLine, jumpSpacing, ledgeDrop, spine } from '../src/game/
 import { Session } from '../src/game/session.ts';
 import { LevelEditor } from '../src/game/editor.ts';
 import { defaultProfile, decodeLevelCode, encodeLevelCode, grantPass, passOwned } from '../src/game/storage.ts';
-import { PASS, SKINS, beginCheckout, gearUnlocked, passGear, passSkins, skinUnlocked } from '../src/game/pass.ts';
+import {
+  PASS,
+  SKINS,
+  beginCheckout,
+  checkoutUrl,
+  consumeCheckoutReturn,
+  gearUnlocked,
+  passAvailable,
+  passGear,
+  passSkins,
+  skinUnlocked,
+} from '../src/game/pass.ts';
 import { GEAR_CATALOG } from '../src/physics/gear.ts';
 import { TUTORIAL_STEPS, Tutorial } from '../src/game/tutorial.ts';
 
@@ -682,6 +693,26 @@ describe('season one', () => {
     expect(profile.pass?.since).toBe(since);
   });
 
+  it('is not on sale yet, and no path can take money or grant it', () => {
+    // Coming soon has to be enforced, not just displayed. Both entry points —
+    // the buy button and the provider's return leg — go through the same gate,
+    // so neither can be reached by setting an environment variable or by
+    // hand-editing a URL.
+    expect(passAvailable()).toBe(false);
+    expect(beginCheckout().kind).toBe('unavailable');
+    expect(consumeCheckoutReturn()).toBe(false);
+  });
+
+  it('still honours a pass that was already bought', () => {
+    // Whatever the shop says, an entitlement someone holds is theirs. Coming
+    // soon must never read as "you no longer own this".
+    const profile = defaultProfile();
+    grantPass(profile);
+    expect(passOwned(profile)).toBe(true);
+    for (const skin of passSkins()) expect(skinUnlocked(skin, passOwned(profile))).toBe(true);
+    for (const g of passGear()) expect(gearUnlocked(g, passOwned(profile))).toBe(true);
+  });
+
   it('unlocks every kit and ski at once, with no quest in between', () => {
     const skins = passSkins();
     const gear = passGear();
@@ -723,10 +754,13 @@ describe('season one', () => {
   });
 
   it('does not pretend to charge when no provider is configured', () => {
-    // No VITE_CHECKOUT_URL in this build, so the button must decline rather
-    // than quietly hand the pass over.
+    // Two reasons this build cannot sell the pass: it is not on sale yet, and
+    // there is no VITE_CHECKOUT_URL behind it either. Which reason answers
+    // first is not the point — the invariant is that the button never redirects
+    // and never quietly hands the pass over.
     const outcome = beginCheckout();
-    expect(outcome.kind).toBe('unconfigured');
+    expect(outcome.kind).not.toBe('redirect');
+    expect(checkoutUrl()).toBeNull();
     const profile = defaultProfile();
     expect(passOwned(profile)).toBe(false);
   });

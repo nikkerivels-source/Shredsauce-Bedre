@@ -207,7 +207,26 @@ export const PASS = {
   price: 2.99,
   currency: 'USD',
   tagline: 'Everything at once, forever. No tiers, no quests, no season to miss.',
+  /**
+   * Whether the pass is on sale yet.
+   *
+   * False means coming soon: the screen still shows everything that is in it,
+   * because that is what a coming-soon page is for, but there is no price, no
+   * button and no path that can grant it. Flip this to true on the same day a
+   * verified checkout goes live and not before — a purchase button that works
+   * before the payment behind it does is the one bug in this area that costs
+   * somebody real money.
+   *
+   * It does not touch entitlement. Anyone who already owns the pass keeps every
+   * kit and every ski; `passOwned` is not consulted here and is not affected.
+   */
+  available: false,
 } as const;
+
+/** True when the pass can actually be bought right now. */
+export function passAvailable(): boolean {
+  return PASS.available;
+}
 
 export function getSkin(id: string): Skin {
   return SKINS.find((s) => s.id === id) ?? SKINS[0];
@@ -252,6 +271,7 @@ export function checkoutUrl(): string | null {
 
 export type CheckoutOutcome =
   | { kind: 'redirect'; url: string }
+  | { kind: 'unavailable' }
   | { kind: 'unconfigured' };
 
 /**
@@ -263,6 +283,11 @@ export type CheckoutOutcome =
  * which is worse than a button that admits it is not finished.
  */
 export function beginCheckout(): CheckoutOutcome {
+  // Availability is checked before the provider, and deliberately: a build that
+  // has a checkout URL configured but has not launched the pass must still
+  // refuse. Otherwise setting the environment variable would quietly put it on
+  // sale, which is not a decision an environment variable should be making.
+  if (!passAvailable()) return { kind: 'unavailable' };
   const url = checkoutUrl();
   if (!url) return { kind: 'unconfigured' };
   return { kind: 'redirect', url };
@@ -281,6 +306,7 @@ export function beginCheckout(): CheckoutOutcome {
  * checkout — which is this one — the parameter does nothing at all.
  */
 export function consumeCheckoutReturn(): boolean {
+  if (!passAvailable()) return false;
   if (!checkoutUrl()) return false;
   if (typeof window === 'undefined') return false;
   const params = new URLSearchParams(window.location.search);

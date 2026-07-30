@@ -1879,7 +1879,8 @@ body {
 }
 
 .pass-buy,
-.pass-owned {
+.pass-owned,
+.pass-soon {
   padding: 22px 0;
   border-top: 1px solid var(--rule-dark);
   border-bottom: 1px solid var(--rule-dark);
@@ -1921,6 +1922,31 @@ body {
   margin: 6px 0 0;
   color: var(--grey-2);
   font-size: 13px;
+}
+
+/* Coming soon takes the space the price had, so the page keeps its shape. */
+.pass-soon-tag {
+  display: inline-block;
+  margin-bottom: 14px;
+  padding: 5px 10px;
+  border: 1px solid var(--rule-dark);
+  border-radius: 3px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--grey-2);
+}
+.pass-soon strong {
+  display: block;
+  font-size: 17px;
+}
+.pass-soon p {
+  margin: 6px 0 0;
+  color: var(--grey-2);
+  font-size: 13px;
+  line-height: 1.55;
+  max-width: 60ch;
 }
 
 .pass-terms {

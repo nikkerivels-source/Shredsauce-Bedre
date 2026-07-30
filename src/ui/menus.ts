@@ -25,6 +25,7 @@ import {
   PASS,
   SKINS,
   beginCheckout,
+  passAvailable,
   checkoutUrl,
   passGear,
   passSkins,
@@ -253,7 +254,13 @@ export class Shell {
             this.handlers.onOpenEditor(built);
           }),
           item('Garage', getGear(gear).name, () => this.show('gear')),
-          item('Season One', passOwned(this.profile) ? 'Owned' : `$${PASS.price.toFixed(2)}`, () => this.show('pass')),
+          item(
+            'Season One',
+            // Owned wins over coming soon: somebody who already has it should
+            // never be told the thing they own has not come out.
+            passOwned(this.profile) ? 'Owned' : passAvailable() ? `$${PASS.price.toFixed(2)}` : 'Coming soon',
+            () => this.show('pass'),
+          ),
           item('Replays', replays > 0 ? `${replays} saved` : '', () => this.show('replays')),
           item('Settings', '', () => this.show('settings')),
         ]),
@@ -425,18 +432,29 @@ export class Shell {
           el('strong', {}, ['Season One is yours.']),
           el('p', {}, ['Every kit and every ski below is unlocked in the Garage.']),
         ])
-      : el('div', { class: 'pass-buy' }, [
-          el('div', { class: 'pass-price' }, [
-            el('span', { class: 'pass-amount' }, [`$${PASS.price.toFixed(2)}`]),
-            el('span', { class: 'pass-once' }, ['once · yours forever']),
-          ]),
-          button(`Buy ${PASS.name}`, () => this.startCheckout(), 'btn'),
-          checkoutUrl()
-            ? null
-            : el('p', { class: 'pass-warning' }, [
-                'Payment is not connected in this build — there is no server behind it yet, so nothing can be charged. The pass is built and ready; wiring a checkout provider is the remaining step.',
-              ]),
-        ]);
+      : passAvailable()
+        ? el('div', { class: 'pass-buy' }, [
+            el('div', { class: 'pass-price' }, [
+              el('span', { class: 'pass-amount' }, [`$${PASS.price.toFixed(2)}`]),
+              el('span', { class: 'pass-once' }, ['once · yours forever']),
+            ]),
+            button(`Buy ${PASS.name}`, () => this.startCheckout(), 'btn'),
+            checkoutUrl()
+              ? null
+              : el('p', { class: 'pass-warning' }, [
+                  'Payment is not connected in this build — there is no server behind it yet, so nothing can be charged. The pass is built and ready; wiring a checkout provider is the remaining step.',
+                ]),
+          ])
+        : // Coming soon: no price, no button, nothing that can take money. The
+          // contents stay on the page — knowing what is in it is the reason to
+          // come back, and hiding them would make this a blank wall.
+          el('div', { class: 'pass-soon' }, [
+            el('span', { class: 'pass-soon-tag' }, ['Coming soon']),
+            el('strong', {}, ['Season One is not out yet.']),
+            el('p', {}, [
+              'Everything below is built and in the game already — it is the checkout that is not finished. Nothing here is for sale today, and nothing is being held back from the free game while it waits.',
+            ]),
+          ]);
 
     return el('div', { class: 'screen pass-screen' }, [
       this.backBar(),
@@ -469,6 +487,10 @@ export class Shell {
     const outcome = beginCheckout();
     if (outcome.kind === 'redirect') {
       window.location.href = outcome.url;
+      return;
+    }
+    if (outcome.kind === 'unavailable') {
+      this.toast('Season One is not on sale yet — nothing was charged.');
       return;
     }
     this.toast('No payment provider is connected yet — nothing was charged.');
