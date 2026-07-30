@@ -127,8 +127,27 @@ export class InputManager {
     this.detach = [];
   }
 
+  /**
+   * True when the keystroke belongs to something the player is typing into.
+   *
+   * The rider controls are bound to plain letters, and the handler calls
+   * `preventDefault` on every key it recognises so the page does not scroll when
+   * you steer. Bound to `window` with no check for what has focus, that also
+   * suppresses character insertion — which meant a, c, d, e, f, g, h, p, q, r,
+   * s, t, v, w, x, z and space could not be typed into the level name, the rider
+   * name, a room name or the share-code box, and Escape paused the game instead
+   * of leaving the field.
+   */
+  private static isTyping(e: Event): boolean {
+    const el = e.target as (Element & { isContentEditable?: boolean }) | null;
+    if (!el || typeof (el as Element).closest !== 'function') return false;
+    if (el.isContentEditable) return true;
+    return !!el.closest('input, textarea, select, [contenteditable]');
+  }
+
   private attach(target: HTMLElement): void {
     const onKeyDown = (e: KeyboardEvent) => {
+      if (InputManager.isTyping(e)) return;
       if (e.repeat) return;
       const action = this.settings.keyboard[e.code];
       if (!action) return;
@@ -140,6 +159,7 @@ export class InputManager {
       else this.keys.add(action);
     };
     const onKeyUp = (e: KeyboardEvent) => {
+      if (InputManager.isTyping(e)) return;
       const action = this.settings.keyboard[e.code];
       if (!action) return;
       if (action === 'crouch' && this.keys.has('crouch')) this.popRequest = 1;
@@ -150,6 +170,11 @@ export class InputManager {
       this.pointers.clear();
       this.steerPointer = null;
       this.grabPointer = null;
+    };
+    // Clicking into a field mid-input would otherwise leave whatever was held
+    // down held forever: the key-up lands on the field and is ignored above.
+    const onFocusIn = (e: Event) => {
+      if (InputManager.isTyping(e)) this.keys.clear();
     };
 
     const onPointerDown = (e: PointerEvent) => {
@@ -229,6 +254,7 @@ export class InputManager {
     window.addEventListener('keydown', onKeyDown, opts);
     window.addEventListener('keyup', onKeyUp);
     window.addEventListener('blur', onBlur);
+    window.addEventListener('focusin', onFocusIn);
     target.addEventListener('pointerdown', onPointerDown, opts);
     target.addEventListener('pointermove', onPointerMove, opts);
     target.addEventListener('pointerup', onPointerUp);
@@ -239,6 +265,7 @@ export class InputManager {
       () => window.removeEventListener('keydown', onKeyDown, opts),
       () => window.removeEventListener('keyup', onKeyUp),
       () => window.removeEventListener('blur', onBlur),
+      () => window.removeEventListener('focusin', onFocusIn),
       () => target.removeEventListener('pointerdown', onPointerDown, opts),
       () => target.removeEventListener('pointermove', onPointerMove, opts),
       () => target.removeEventListener('pointerup', onPointerUp),
