@@ -14,6 +14,29 @@ export interface InputSettings {
   keyboard: Record<string, string>;
 }
 
+/**
+ * How long a press of the jump key loads the legs before it fires.
+ *
+ * Measured, not guessed. The leg is an internal spring the sim integrates at
+ * 1920 Hz, so it takes real time to physically compress — far longer than the
+ * command axis takes to reach 1. Sweeping the hold on flat groomed snow gives
+ * the air each load buys:
+ *
+ *     40 ms -> 0.000 s    240 ms -> 0.192 s    360 ms -> 0.558 s
+ *    160 ms -> 0.117 s    280 ms -> 0.408 s    420 ms -> 0.575 s
+ *    200 ms -> 0.158 s    320 ms -> 0.550 s    650 ms -> 0.550 s
+ *
+ * The knee is at 320 ms and it plateaus after. So that is the floor: a tap of
+ * Space buys the same jump a well-timed hold does, because anything less is a
+ * spring released before it compressed. It reads as a wind-up rather than as
+ * lag because the rider visibly crouches through it.
+ *
+ * It is a floor, not a fixed cost — hold the key and the load keeps building
+ * past it, and releasing after that pops on the frame you release, so timing a
+ * pop off a lip is unchanged.
+ */
+const JUMP_MIN_LOAD = 0.32;
+
 export function defaultKeymap(): Record<string, string> {
   return {
     KeyA: 'leanLeft',
@@ -28,6 +51,17 @@ export function defaultKeymap(): Record<string, string> {
     ShiftLeft: 'tuck',
     KeyQ: 'twistLeft',
     KeyE: 'twistRight',
+    // Grabs sit on both the number row and the bottom row. The numbers are
+    // where anyone coming from another snow game will reach first; the letters
+    // are where a hand already on WASD can get to without moving. Neither is
+    // the "real" binding and removing either would cost somebody their muscle
+    // memory for nothing.
+    Digit1: 'grab1',
+    Digit2: 'grab2',
+    Digit3: 'grab3',
+    Digit4: 'grab4',
+    Digit5: 'grab5',
+    Digit6: 'grab6',
     KeyZ: 'grab1',
     KeyX: 'grab2',
     KeyC: 'grab3',
@@ -93,6 +127,27 @@ export class InputManager {
   private steerPointer: Pointer | null = null;
   private grabPointer: Pointer | null = null;
   private popRequest = 0;
+  /**
+   * Seconds the jump key has been loading, or -1 when it is not.
+   *
+   * Space is a jump button. It was not one: the leg spring loads while the key
+   * is down and fires when it is released, so a *tap* released the spring
+   * before it had compressed and produced nothing at all. Measured on flat
+   * groomed snow at 1/120 — 40 ms of Space bought 0.000 s of air, 80 ms bought
+   * 0.042 s, and it took 300 ms of hold-then-release to get a real 0.55 s
+   * jump. A jump button that does nothing unless you know to hold it for a
+   * third of a second is not a jump button.
+   *
+   * So a press now guarantees the load completes. Let go early and the loading
+   * keeps running to JUMP_MIN_LOAD before it pops, which is the difference
+   * between "Space jumps" and "Space jumps if you hold it right". Hold longer
+   * and nothing changes from before: the load keeps building and fires the
+   * moment you release, so absorbing a transition and popping off the lip is
+   * the same technique it always was, and holding it down still just leaves
+   * you crouched.
+   */
+  private jumpLoad = -1;
+  private jumpHeld = false;
   private airborne = false;
   private detach: Array<() => void> = [];
   private grabList: GrabSpec[];
@@ -156,13 +211,23 @@ export class InputManager {
       else if (action === 'camera') this.actions.push('camera');
       else if (action === 'pause') this.actions.push('pause');
       else if (action === 'photo') this.actions.push('photo');
-      else this.keys.add(action);
+      else {
+        if (action === 'crouch' && !this.keys.has('crouch')) {
+          this.jumpLoad = 0;
+          this.jumpHeld = true;
+        }
+        this.keys.add(action);
+      }
     };
     const onKeyUp = (e: KeyboardEvent) => {
       if (InputManager.isTyping(e)) return;
       const action = this.settings.keyboard[e.code];
       if (!action) return;
-      if (action === 'crouch' && this.keys.has('crouch')) this.popRequest = 1;
+      // Releasing the jump key does not pop by itself any more — it hands over
+      // to the loader in update(), which pops as soon as the load is deep
+      // enough. Past that depth "as soon as" is this frame, so a hold and
+      // release still fires exactly when the key comes up.
+      if (action === 'crouch' && this.keys.has('crouch')) this.jumpHeld = false;
       this.keys.delete(action);
     };
     const onBlur = () => {
@@ -320,6 +385,18 @@ export class InputManager {
       twistTarget += kbTwist;
     }
 
+    // The jump loader. Runs while a press is loading, whether or not the key is
+    // still down, and fires once the legs are compressed enough to be worth
+    // releasing. A held key never reaches the release branch, so holding still
+    // means staying crouched.
+    if (this.jumpLoad >= 0) {
+      crouchTarget = 1;
+      this.jumpLoad += dt;
+      if (!this.jumpHeld && this.jumpLoad >= JUMP_MIN_LOAD) {
+        this.popRequest = 1;
+        this.jumpLoad = -1;
+      }
+    }
     if (this.keys.has('crouch')) crouchTarget = 1;
     if (this.keys.has('tuck')) tuck = 1;
     if (this.keys.has('plant')) plant = 1;

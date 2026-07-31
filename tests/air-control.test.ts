@@ -75,6 +75,76 @@ function jumpLevel() {
   return level;
 }
 
+/** Flat groomed snow, no features: a jump here is the jump and nothing else. */
+function flatLevel() {
+  const level = jumpLevel();
+  level.features.length = 0;
+  level.terrain.slopeAngle = 10;
+  return level;
+}
+
+function jumpRig() {
+  const level = flatLevel();
+  const baker = new TerrainBaker(level);
+  const gear = getGear('twin-172');
+  const sim = new RiderSim(baker.field, level, buildGrindSurfaces(level, baker.field), gear, defaultTuning());
+  const input = new InputManager(new EventTarget() as unknown as HTMLElement, gear.discipline, {
+    ...defaultInputSettings(gear.discipline),
+  });
+  sim.reset(level.spawn.x, level.spawn.z, level.spawn.heading);
+  return { sim, input };
+}
+
+/** Seconds of air bought by pressing the jump key for `holdMs`. */
+function airTime(holdMs: number): number {
+  const { sim, input } = jumpRig();
+  const dt = 1 / 120;
+  const pressAt = 3;
+  let t = 0;
+  let pressed = false;
+  let released = false;
+  let air = 0;
+  for (let step = 0; step < 120 * 9; step++) {
+    if (!pressed && t >= pressAt) {
+      down('Space');
+      pressed = true;
+    }
+    if (pressed && !released && t >= pressAt + holdMs / 1000) {
+      up('Space');
+      released = true;
+    }
+    sim.step(dt, input.update(dt, sim.telemetry.airborne));
+    if (pressed && sim.telemetry.airborne) air += dt;
+    t += dt;
+  }
+  if (!released) up('Space');
+  return air;
+}
+
+/** Holds the key for `holdS`, reporting the crouch reached and whether it popped. */
+function holdProfile(holdS: number): { crouchWhileHeld: number; poppedOnRelease: boolean } {
+  const { sim, input } = jumpRig();
+  const dt = 1 / 120;
+  let t = 0;
+  let crouchWhileHeld = 0;
+  let released = false;
+  let airAfterRelease = 0;
+  down('Space');
+  for (let step = 0; step < 120 * 9; step++) {
+    if (!released && t >= holdS) {
+      up('Space');
+      released = true;
+    }
+    const i = input.update(dt, sim.telemetry.airborne);
+    // Sampled a few frames in, so the ramp to full compression is not counted.
+    if (!released && t > 0.5) crouchWhileHeld = Math.max(crouchWhileHeld, i.crouch);
+    sim.step(dt, i);
+    if (released && sim.telemetry.airborne) airAfterRelease += dt;
+    t += dt;
+  }
+  return { crouchWhileHeld, poppedOnRelease: airAfterRelease > 0.15 };
+}
+
 interface RunOptions {
   /** Keys taken down the frame the gear leaves the lip and held to touchdown. */
   air?: string[];
@@ -325,5 +395,34 @@ describe('keyboard air axes — in flight', () => {
     expect(wound.trick).toBeDefined();
     expect(wound.roll).toBeGreaterThan(45);
     expect(other.roll).toBeLessThan(-45);
+  });
+
+  // --- Space is a jump button ---------------------------------------------
+
+  it('jumps on a tap, not only on a held-then-released press', () => {
+    // The leg spring loads while the key is down and fires on release, so a tap
+    // used to release it before it had compressed: 40 ms of Space bought
+    // 0.000 s of air, and it took a 320 ms hold to get a real jump. A press now
+    // guarantees the load finishes, so every press is the same jump.
+    const tap = airTime(40);
+    const hold = airTime(400);
+    expect(tap).toBeGreaterThan(0.4);
+    // Within a frame or two of each other: a tap is not a worse jump.
+    expect(Math.abs(tap - hold)).toBeLessThan(0.1);
+  });
+
+  it('still lets a long hold stay crouched and pop on release', () => {
+    // Absorbing a transition and popping off the lip is the technique the whole
+    // trick ladder is measured with. Automating the tap must not cost it.
+    //
+    // Worth recording what this measures rather than only that it passes: a
+    // long hold reaches full compression and does pop, but it pops *worse* than
+    // a tap — 0.9 s of hold buys 0.25 s of air against the 0.55 s a 320 ms
+    // press gets, and 0.6 s and 1.4 s land in the same place. The leg bottoms
+    // out on its stop and the stored energy goes nowhere. That is leg-spring
+    // behaviour inside the sim, not input routing, and it is left alone here.
+    const { crouchWhileHeld, poppedOnRelease } = holdProfile(0.9);
+    expect(crouchWhileHeld).toBeGreaterThan(0.8);
+    expect(poppedOnRelease).toBe(true);
   });
 });

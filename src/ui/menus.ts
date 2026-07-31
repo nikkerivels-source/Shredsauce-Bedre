@@ -761,12 +761,18 @@ export class Shell {
             'drag it to pick which grab.',
         ]),
         el('p', { class: 'help' }, [
-          'Keyboard, on the snow: A/D lean · W/S weight · Q/E wind up rotation · Space load and pop · ' +
-            'F plant a pole · Shift tuck · Z X C V G H grabs · R reset · T camera · P photo.',
+          'Keyboard, on the snow: Space jump · A/D or ←/→ lean · W/S or ↑/↓ weight · ' +
+            'Q/E wind up rotation · F plant a pole · Shift tuck · 1-6 or Z X C V G H grabs · ' +
+            'R reset · T camera · P photo.',
         ]),
         el('p', { class: 'help' }, [
           'Keyboard, in the air: the same three pairs steer the three rotation axes — ' +
-            'A/D spin · W/S flip · Q/E side flip. Hold two together and the rotation goes off axis.',
+            '←/→ spin · ↑/↓ flip · Q/E side flip. Hold two together and the rotation goes off axis.',
+        ]),
+        el('p', { class: 'help' }, [
+          'Tap Space to jump: the rider crouches and pops on its own. Hold it longer to stay ' +
+            'compressed through a transition and pop the moment you let go — that is how you time ' +
+            'a lip, and it is worth learning, but you never have to.',
         ]),
       ]),
       el('div', { class: 'settings-block' }, [
