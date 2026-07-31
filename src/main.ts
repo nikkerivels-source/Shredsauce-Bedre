@@ -409,6 +409,8 @@ class App {
         return;
       } else if (action === 'photo') {
         this.savePhoto();
+      } else if (action === 'debug') {
+        this.shell.toast(this.hud.toggleDebug() ? 'Debug overlay on' : 'Debug overlay off');
       }
     }
 

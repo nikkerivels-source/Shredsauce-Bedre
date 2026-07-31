@@ -5,7 +5,36 @@ import { camberPressure, inertiaTensor, type GearSpec } from './gear.ts';
 import { getGrab, type GrabId } from './grabs.ts';
 import { makeGrindQuery, queryGrindSurfaces, type GrindQuery, type GrindSurface } from './rails.ts';
 
-export type RiderState = 'riding' | 'airborne' | 'grinding' | 'bailed';
+/**
+ * Crouch command that counts as loading a pop, and the level it must fall back
+ * below to stop counting. Split so a hand resting on the threshold does not
+ * flicker the state every frame.
+ */
+const CROUCH_ENTER = 0.35;
+const CROUCH_EXIT = 0.2;
+
+/**
+ * How long the landing absorption window lasts.
+ *
+ * The reference shows a clear sink-and-rise on touchdown. This is the state
+ * half of that; whatever reads it decides how much steering to give back.
+ */
+const LANDING_ABSORB = 0.25;
+
+/**
+ * What the rider is doing, as one value.
+ *
+ * `crouching` and `landing` are windows inside what used to be `riding`, split
+ * out because both need to be seen: crouching is the pop load, landing is an
+ * absorption window. Anything meaning "on a surface" must ask `onGround`, or it
+ * will silently stop working during those windows.
+ */
+export type RiderState = 'riding' | 'crouching' | 'airborne' | 'landing' | 'grinding' | 'bailed';
+
+/** True for every state where the gear is on a surface and steering applies. */
+export function onGround(state: RiderState): boolean {
+  return state === 'riding' || state === 'crouching' || state === 'landing';
+}
 
 export interface RiderInput {
   /** -1..1 across the board. Commands edge angle; the body inclines to follow. */
@@ -116,6 +145,18 @@ export interface SimEvent {
 
 export interface Telemetry {
   state: RiderState;
+  /** Seconds in the current state. */
+  stateTime: number;
+  /** "from -> to: why", for the debug overlay. */
+  lastTransition: string;
+  /** True when travelling backwards relative to the gear's nose. */
+  switchStance: boolean;
+  /** Degrees turned about world up since the last takeoff. */
+  spinDeg: number;
+  /** Rate about world up, deg/s. Positive is to the right. */
+  spinRate: number;
+  /** How far the body's own up axis is tilted off world vertical, degrees. */
+  tiltDeg: number;
   speed: number;
   /** Edge angle of the gear relative to the snow, degrees. */
   edgeAngle: number;
@@ -198,7 +239,23 @@ export class RiderSim {
   /** Derived each substep from the momentum and the current inertia tensor. */
   readonly angularVelocity = new Vec3();
 
+  /**
+   * Read it anywhere; write it only through `transition`.
+   *
+   * There were eight assignment sites and no record of how the rider got where
+   * it is, which is the thing that makes state bugs hard: by the time you see
+   * the wrong state you cannot tell which branch set it.
+   */
   state: RiderState = 'riding';
+  /** Seconds in the current state. Drives the landing window and the overlay. */
+  stateTime = 0;
+  /** Previous state and why it changed, for the debug overlay. */
+  lastTransition = 'start';
+  /** Radians about world up accumulated since the last takeoff. */
+  private spinSinceTakeoff = 0;
+  private readonly sTelUp = new Vec3();
+  private readonly sTelRight = new Vec3();
+  private readonly sTelFwd = new Vec3();
   gear: GearSpec;
   riderMass = 72;
   tuning: SimTuning;
@@ -233,6 +290,12 @@ export class RiderSim {
   readonly events: SimEvent[] = [];
   readonly telemetry: Telemetry = {
     state: 'riding',
+    stateTime: 0,
+    lastTransition: 'start',
+    switchStance: false,
+    spinDeg: 0,
+    spinRate: 0,
+    tiltDeg: 0,
     speed: 0,
     edgeAngle: 0,
     inclination: 0,
@@ -369,7 +432,7 @@ export class RiderSim {
     this.angularMomentum.setZero();
     this.angularVelocity.setZero();
     this.angulation = 0;
-    this.state = 'riding';
+    this.transition('riding', 'reset');
     this.airTime = 0;
     this.groundedTime = 1;
     this.grind = null;
@@ -439,7 +502,7 @@ export class RiderSim {
 
     this.integrateLeg(dt, input, contactNormalForce);
     this.applyControlTorques(dt, input, contactNormalForce);
-    this.updateFlightState(dt, contactNormalForce);
+    this.updateFlightState(dt, contactNormalForce, input);
     this.checkBail(input, contactNormalForce);
 
     // Semi-implicit Euler: velocity first, then position, which is stable for
@@ -526,7 +589,7 @@ export class RiderSim {
         pole.tipY = buried > 0 ? restGround : _poleTip.y;
         pole.tipZ = _poleTip.z;
 
-        if (buried > 0 && this.state === 'riding') {
+        if (buried > 0 && onGround(this.state)) {
           const speed = this.velocity.length();
           const drag = Math.min(90, 26 * Math.min(buried, 0.25) * speed * speed * (1 - snowHold * 0.5));
           if (drag > 0.5 && speed > 0.1) {
@@ -538,7 +601,7 @@ export class RiderSim {
           }
         }
 
-        if (!active || this.state !== 'riding') continue;
+        if (!active || !onGround(this.state)) continue;
 
         // Where the tip goes depends on what the plant is *for*, and the two
         // are genuinely different actions:
@@ -584,7 +647,7 @@ export class RiderSim {
       _poleTip.set(pole.tipX, pole.tipY, pole.tipZ);
       const strut = _poleDirTmp.subVectors(hand, _poleTip);
       const reachLeft = strut.length();
-      if (!active || reachLeft > poleLength || this.state !== 'riding') {
+      if (!active || reachLeft > poleLength || !onGround(this.state)) {
         pole.planted = false;
         pole.force = 0;
         pole.push = 0;
@@ -1061,7 +1124,7 @@ export class RiderSim {
     this.grindEntry = q.along;
     this.grindBalance = clamp(q.distance / Math.max(0.12, q.surface.halfWidth + 0.12), -1, 1) * 0.25;
     this.grindBalanceRate = 0;
-    this.state = 'grinding';
+    this.transition('grinding', 'engaged a rail');
     this.events.push({ type: 'grindStart', time: this.time, surfaceId: q.surface.id, speed });
     return true;
   }
@@ -1069,7 +1132,7 @@ export class RiderSim {
   private solveGrind(input: RiderInput): number {
     const surface = this.grind;
     if (!surface) {
-      this.state = 'riding';
+      this.transition('riding', 'rail vanished');
       return 0;
     }
     const M = this.totalMass;
@@ -1168,7 +1231,7 @@ export class RiderSim {
     });
     this.grind = null;
     this.grindCooldown = 0.25;
-    if (this.state === 'grinding') this.state = 'airborne';
+    if (this.state === 'grinding') this.transition('airborne', 'popped off the rail');
   }
 
   // -------------------------------------------------------------------------
@@ -1388,7 +1451,22 @@ export class RiderSim {
   // State transitions
   // -------------------------------------------------------------------------
 
-  private updateFlightState(dt: number, contactForce: number): void {
+  /**
+   * The only writer of `state`.
+   *
+   * A no-op bounces rather than resetting `stateTime`, so "how long have I been
+   * airborne" stays true even if something asks for the state it is already in.
+   */
+  private transition(next: RiderState, reason: string): void {
+    if (next === this.state) return;
+    this.lastTransition = `${this.state} -> ${next}: ${reason}`;
+    this.state = next;
+    this.stateTime = 0;
+  }
+
+  private updateFlightState(dt: number, contactForce: number, input: RiderInput): void {
+    this.stateTime += dt;
+    if (this.state === 'airborne') this.spinSinceTakeoff += this.angularVelocity.y * dt;
     if (this.state === 'grinding') {
       this.airTime = 0;
       this.groundedTime += dt;
@@ -1404,7 +1482,7 @@ export class RiderSim {
       const slowEnough = this.velocity.lengthSq() < 210;
       const settled = grounded && slowEnough;
       if (this.bailTimer <= -3 || (this.bailTimer <= 0 && settled)) {
-        this.state = 'riding';
+        this.transition('riding', 'recovered');
         this.bailReason = '';
         this.angularMomentum.scale(0.1);
         this.events.push({ type: 'recover', time: this.time });
@@ -1417,7 +1495,8 @@ export class RiderSim {
       this.airTime += dt;
       this.groundedTime = 0;
       if (this.state !== 'airborne' && this.airTime > 0.05) {
-        this.state = 'airborne';
+        this.transition('airborne', 'takeoff');
+        this.spinSinceTakeoff = 0;
         this.lastTakeoffSpeed = this.velocity.length();
         this.peakLegForce = 0;
         this.events.push({ type: 'takeoff', time: this.time, speed: this.lastTakeoffSpeed });
@@ -1426,7 +1505,7 @@ export class RiderSim {
       this.groundedTime += dt;
       if (this.state === 'airborne' && this.groundedTime > 0.02) {
         const quality = this.landingQuality();
-        this.state = 'riding';
+        this.transition('landing', 'touchdown');
         this.events.push({
           type: 'landing',
           time: this.time,
@@ -1437,6 +1516,18 @@ export class RiderSim {
         this.airTime = 0;
       }
       if (this.state !== 'airborne') this.airTime = 0;
+
+      // Grounded windows, in priority order: absorbing a landing beats loading
+      // the next pop, because you cannot pop out of a compression you have not
+      // finished taking.
+      if (this.state === 'landing' && this.stateTime >= LANDING_ABSORB) {
+        this.transition('riding', 'absorbed');
+      }
+      if (this.state === 'riding' && input.crouch > CROUCH_ENTER) {
+        this.transition('crouching', 'loading a pop');
+      } else if (this.state === 'crouching' && input.crouch < CROUCH_EXIT) {
+        this.transition('riding', 'released the load');
+      }
     }
   }
 
@@ -1492,7 +1583,7 @@ export class RiderSim {
 
   bail(reason: string): void {
     if (this.state === 'bailed') return;
-    this.state = 'bailed';
+    this.transition('bailed', reason);
     this.bailReason = reason;
     this.bailTimer = 1.4;
     this.grind = null;
@@ -1541,6 +1632,14 @@ export class RiderSim {
     // A carve is a slip angle near zero; anything past ~12 degrees is a skid.
     t.carveQuality = clamp01(1 - this.lastSlipSum / (12 * DEG));
     t.gForce = this.lastNormalForce / (M * this.tuning.gravity);
+    t.stateTime = this.stateTime;
+    t.lastTransition = this.lastTransition;
+    this.getBoardAxes(this.sTelRight, this.sTelUp, this.sTelFwd);
+    t.switchStance = this.velocity.lengthSq() > 2.25 && this.sTelFwd.dot(this.velocity) < 0;
+    t.spinDeg = this.spinSinceTakeoff * RAD;
+    t.spinRate = this.angularVelocity.y * RAD;
+    // acos of body-up against world-up: 0 is upright, 90 is on its side.
+    t.tiltDeg = Math.acos(clamp(this.sTelUp.y, -1, 1)) * RAD;
     t.airborne = this.state === 'airborne';
     t.airTime = this.airTime;
     t.altitude = this.sBoardCenter.y - this.field.heightAt(this.sBoardCenter.x, this.sBoardCenter.z);

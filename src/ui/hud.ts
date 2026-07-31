@@ -48,6 +48,8 @@ export class Hud {
   private popups: Popup[] = [];
   private bailTimer = 0;
   private liveTrickTimer = 0;
+  private debugPanel: HTMLElement;
+  private debugOn = false;
 
   constructor() {
     this.speedValue = el('span', { class: 'speed-value' }, ['0']);
@@ -102,7 +104,13 @@ export class Hud {
     // No boxes. Readouts sit directly on the mountain over soft scrims, the way
     // a broadcast overlay does — a grey rounded rectangle behind every number
     // is the fastest way to make a game look like a web page.
+    // Tuning instrument, not part of the HUD design. The spec is right that the
+    // ground physics cannot be tuned without one.
+    this.debugPanel = el('pre', { class: 'debug-panel' }, ['']);
+    this.debugPanel.style.display = 'none';
+
     this.root = el('div', { class: 'hud' }, [
+      this.debugPanel,
       el('div', { class: 'scrim scrim-top' }),
       el('div', { class: 'scrim scrim-bottom' }),
       el('div', { class: 'hud-top' }, [
@@ -146,6 +154,34 @@ export class Hud {
   }
 
   /** Refreshes the numeric readouts. */
+  /** Flips the tuning overlay. Returns the new state so the caller can say so. */
+  toggleDebug(): boolean {
+    this.debugOn = !this.debugOn;
+    this.debugPanel.style.display = this.debugOn ? '' : 'none';
+    return this.debugOn;
+  }
+
+  /**
+   * State and time-in-state answer "why is it doing that". The last transition
+   * answers "how did it get here", which eight scattered assignment sites used
+   * to make unanswerable. Speed is in m/s as well as km/h because every target
+   * in the spec is stated in m/s.
+   */
+  private drawDebug(t: Telemetry, combo: number): void {
+    this.debugPanel.textContent = [
+      `state     ${t.state}  (${t.stateTime.toFixed(2)}s)`,
+      `from      ${t.lastTransition}`,
+      `speed     ${t.speed.toFixed(1)} m/s   ${Math.round(t.speed * 3.6)} km/h`,
+      `switch    ${t.switchStance ? 'yes' : 'no'}`,
+      `spin      ${t.spinDeg.toFixed(0)}deg   rate ${t.spinRate.toFixed(0)}deg/s`,
+      `tilt      ${t.tiltDeg.toFixed(0)}deg off vertical`,
+      `air       ${t.airTime.toFixed(2)}s   alt ${t.altitude.toFixed(2)}m`,
+      `edge      ${t.edgeAngle.toFixed(0)}deg  slip ${t.slipAngle.toFixed(0)}deg  carve ${t.carveQuality.toFixed(2)}`,
+      `g         ${t.gForce.toFixed(2)}   leg ${(t.legForce / 1000).toFixed(1)}kN`,
+      `combo     x${combo}`,
+    ].join('\n');
+  }
+
   update(
     dt: number,
     telemetry: Telemetry,
@@ -154,6 +190,8 @@ export class Hud {
     timeRemaining: number,
     combo: number,
   ): void {
+    if (this.debugOn) this.drawDebug(telemetry, combo);
+
     this.speedValue.textContent = Math.round(telemetry.speed * 3.6).toString();
 
     // Edges close in above about 45 km/h. It is a cheap effect but it is the

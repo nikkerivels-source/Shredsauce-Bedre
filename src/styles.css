@@ -2247,3 +2247,20 @@ body {
     display: none;
   }
 }
+
+/* Tuning overlay. Deliberately plain: it is an instrument, not part of the HUD. */
+.debug-panel {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 40;
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 4px;
+  background: rgba(6, 10, 16, 0.82);
+  color: #d6e4f5;
+  font: 500 11.5px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace;
+  white-space: pre;
+  pointer-events: none;
+  letter-spacing: 0.01em;
+}

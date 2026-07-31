@@ -3,7 +3,7 @@ import { neutralInput, type RiderInput } from '../physics/riderSim.ts';
 import { grabsFor, type GrabSpec } from '../physics/grabs.ts';
 import type { Discipline } from '../physics/gear.ts';
 
-export type UiAction = 'reset' | 'camera' | 'pause' | 'replay' | 'photo';
+export type UiAction = 'reset' | 'camera' | 'pause' | 'replay' | 'photo' | 'debug';
 
 export interface InputSettings {
   /** Screen pixels of drag that equal full lean. */
@@ -72,6 +72,7 @@ export function defaultKeymap(): Record<string, string> {
     KeyR: 'reset',
     KeyT: 'camera',
     KeyP: 'photo',
+    Backquote: 'debug',
     Escape: 'pause',
   };
 }
@@ -211,6 +212,7 @@ export class InputManager {
       else if (action === 'camera') this.actions.push('camera');
       else if (action === 'pause') this.actions.push('pause');
       else if (action === 'photo') this.actions.push('photo');
+      else if (action === 'debug') this.actions.push('debug');
       else {
         if (action === 'crouch' && !this.keys.has('crouch')) {
           this.jumpLoad = 0;
