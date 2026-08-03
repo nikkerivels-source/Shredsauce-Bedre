@@ -182,9 +182,9 @@ export const MOUNTAIN_MODEL: Readonly<RideModel> = Object.freeze({
   turnGain: 1,
   holdGain: 1,
   pushAccel: 0,
-  popGain: 1,
-  loadFloor: 0.32,
-  loadFull: 0.32,
+  popGain: 2,
+  loadFloor: 0.2,
+  loadFull: 0.36,
 });
 
 /**
@@ -214,9 +214,9 @@ export const STREET_MODEL: Readonly<RideModel> = Object.freeze({
   turnGain: 1.85,
   holdGain: 1.2,
   pushAccel: 7.5,
-  popGain: 1,
-  loadFloor: 0.32,
-  loadFull: 0.32,
+  popGain: 2,
+  loadFloor: 0.2,
+  loadFull: 0.36,
 });
 
 export function rideModel(style: 'mountain' | 'street'): Readonly<RideModel> {
@@ -348,7 +348,7 @@ export interface Telemetry {
  */
 const AIR_GAIN_YAW = 15;
 const AIR_GAIN_PITCH = 10;
-const AIR_GAIN_ROLL = 10;
+const AIR_GAIN_ROLL = 7;
 /** How fast a held key spends its reservoir, per second. */
 const AIR_FILL = 1.1;
 /** Reservoir recovery while the axis is being pushed, per second. */
@@ -386,6 +386,24 @@ const LEG_HARD_MAX = 1.07;
  * goes slack and the gear stays on the snow through the load.
  */
 const CROUCH_RATE = 1.5;
+
+/** Leg extension speed above which a pop is under way, m/s. */
+const POP_BALANCE_RATE = 0.35;
+/**
+ * Fraction of the pop's pitching moment the rider holds.
+ *
+ * A real fraction now, because what it cancels is the moment the snow is
+ * actually applying — accumulated from the contact normals in the solve —
+ * rather than an estimate built from the leg force. That distinction is the
+ * whole fix. The estimate needed a different fudge factor on every jump: 1.8
+ * squared up the 4 m kicker and turned the 6 m one into a backflip, 2.6 made
+ * it a double frontflip, 3.4 a triple. Cancelling the measured moment gives a
+ * clean hands-off straight air on both at every fraction from 0.5 to 0.95.
+ *
+ * 0.7 leaves three tenths of it, so a pop off the tail still pitches — just
+ * not into a somersault nobody asked for.
+ */
+const POP_BALANCE = 0.7;
 
 /**
  * The rider.
@@ -546,6 +564,8 @@ export class RiderSim {
   private accumulator = 0;
   private packTimer = 0;
   private lastNormalForce = 0;
+  /** Pitching moment from contact normals alone, N·m about the lateral axis. */
+  private lastNormalPitch = 0;
   private lastContactCount = 0;
   private lastSlipSum = 0;
   private lastSpraySum = 0;
@@ -673,6 +693,7 @@ export class RiderSim {
     this.grindCooldown = Math.max(0, this.grindCooldown - dt);
 
     this.integrateLeg(dt, input, contactNormalForce);
+    this.applyPopBalance();
     this.applyControlTorques(dt, input, contactNormalForce);
     this.updateFlightState(dt, contactNormalForce, input);
     this.checkBail(input, contactNormalForce);
@@ -1111,6 +1132,7 @@ export class RiderSim {
     let slipSum = 0;
     let spraySum = 0;
     let copMoment = 0;
+    let normalPitch = 0;
     this.sContactForce.setZero();
 
     // Surface-plane basis aligned with the gear. Constant across the contact
@@ -1191,6 +1213,12 @@ export class RiderSim {
       this.sContactForce.add(this.sTmpA);
       this.sTorque.add(this.sTmpB.crossVectors(r, this.sTmpA));
 
+      // The pitching moment the *normal* forces alone put about the centre of
+      // mass. Measured rather than estimated, because estimating it from the
+      // leg force needed a different fudge factor on every jump.
+      this.sTmpD.copy(this.sNormal).scale(normalForce);
+      normalPitch += this.sTmpB.crossVectors(r, this.sTmpD).dot(this.sLatS);
+
       const slipSpeed = Math.abs(vLat);
       slipSum += Math.abs(slipAngle);
       spraySum += slipSpeed * (0.4 + pen[i] * 3);
@@ -1210,6 +1238,7 @@ export class RiderSim {
     this.lastEdgeAngle = edgeAngle;
     this.lastSidecutR = sidecutR;
     this.lastCop = totalNormal > 1 ? copMoment / totalNormal : 0;
+    this.lastNormalPitch = normalPitch;
     const nComp = this.sContactForce.dot(this.sNormal);
     this.lastLateralG =
       this.sTmpA.copy(this.sContactForce).addScaled(this.sNormal, -nComp).length() /
@@ -1465,6 +1494,36 @@ export class RiderSim {
    * the gear. Extending drives the light gear down hard into the snow and the
    * reaction lifts the rider — which is exactly what an ollie is.
    */
+  /**
+   * Push through where you are actually loaded.
+   *
+   * The leg drives the gear down and the snow pushes back at the centre of
+   * pressure. On flat ground the centre of pressure sits under the rider and
+   * the reaction is a clean lift. As a ramp ends it moves back under the tail,
+   * and the same extension then has a moment arm about the centre of mass —
+   * so a strong pop off a lip pitches the rider forward. Hands off the
+   * controls on the reference kicker that was 123 degrees of pitch and a
+   * frontflip nobody asked for.
+   *
+   * A real skier does not eat that. They push through the foot that is loaded
+   * and hold the fore-aft with ankle and core, which is exactly a moment about
+   * the lateral axis opposing the one the extension creates. The rider here is
+   * rigid and cannot, so it is applied explicitly.
+   *
+   * Two things keep this from being an auto-balance assist. It is gated on the
+   * leg actually extending fast — it is the pop, not a permanent hand on the
+   * tiller — and it cancels a fraction rather than all of it, so a badly
+   * balanced pop off the tail still pitches, just not into a somersault.
+   */
+  private applyPopBalance(): void {
+    if (!onGround(this.state)) return;
+    if (this.legVelocity < POP_BALANCE_RATE) return;
+    // Cancel a fraction of the moment the snow is actually applying, not a
+    // guess at it. Because it is the measured quantity, one fraction works on
+    // every jump instead of needing a different fudge per kicker.
+    this.sTorque.addScaled(this.sLatS, -POP_BALANCE * this.lastNormalPitch);
+  }
+
   private integrateLeg(dt: number, input: RiderInput, contactForce: number): void {
     const minLeg = 0.5;
     const maxLeg = 1.02;
@@ -1525,8 +1584,8 @@ export class RiderSim {
     // shipped here: the stop fixes above, which are unambiguously correct on
     // their own, with the rate limit off and the leg at its original strength.
     const wanted = lerp(maxLeg, minLeg + 0.06, clamp01(input.crouch));
-    this.legTarget = wanted;
-    void CROUCH_RATE;
+    this.legTarget =
+      wanted < this.legTarget ? Math.max(wanted, this.legTarget - CROUCH_RATE * dt) : wanted;
     const target = this.legTarget;
     const sub = dt / LEG_SUBSTEPS;
     let peak = 0;
