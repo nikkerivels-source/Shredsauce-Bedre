@@ -5,6 +5,7 @@ import { buildGrindSurfaces } from '../src/physics/rails.ts';
 import { TerrainBaker } from '../src/world/terrain.ts';
 import { getGear } from '../src/physics/gear.ts';
 import { emptyLevel } from '../src/world/level.ts';
+import { PRESETS } from '../src/game/levels.ts';
 
 /** A street-like pitch: shallow, groomed hard, no features. */
 function ground(slopeDeg: number, style: 'mountain' | 'street' = 'mountain') {
@@ -164,5 +165,59 @@ describe('step 2 - the street ground model', () => {
     const streetSlip = lastSlip;
     turnRate(10, 'mountain', 'ArrowRight');
     expect(streetSlip).toBeGreaterThan(lastSlip * 2);
+  });
+});
+
+describe('the street course', () => {
+  const downtown = () => PRESETS.find((p) => p.id === 'downtown')!.build();
+
+  it('is the only street level, and every mountain stayed a mountain', () => {
+    const street = PRESETS.filter((p) => p.build().style === 'street').map((p) => p.id);
+    expect(street).toEqual(['downtown']);
+    expect(PRESETS.length).toBeGreaterThan(10);
+  });
+
+  it('actually gets the street ride model when ridden', () => {
+    // The level flag is only worth having if the sim reads it. This is the
+    // whole chain: preset -> level.style -> RiderSim.ride.
+    const level = downtown();
+    const baker = new TerrainBaker(level);
+    const gear = getGear('twin-172');
+    const sim = new RiderSim(baker.field, level, buildGrindSurfaces(level, baker.field), gear, defaultTuning());
+    expect(sim.ride.topSpeed).toBe(14);
+    expect(sim.ride.pushAccel).toBeGreaterThan(0);
+  });
+
+  it('keeps features close enough together to be a street run', () => {
+    // The single most important observation in the reference: he is rarely more
+    // than two to four seconds from being on something. At the street model's
+    // ~14 m/s that is 30-55 m, so no gap between ridable features may exceed
+    // it by much. Props are scenery and do not count.
+    const level = downtown();
+    const zs = level.features
+      .filter((f) => f.kind !== 'prop')
+      .map((f) => f.z)
+      .sort((a, b) => a - b);
+    expect(zs.length).toBeGreaterThan(12);
+    let worst = 0;
+    for (let i = 1; i < zs.length; i++) worst = Math.max(worst, zs[i] - zs[i - 1]);
+    expect(worst).toBeLessThan(75);
+  });
+
+  it('is flat enough that gravity is not the speed source', () => {
+    const level = downtown();
+    expect(level.terrain.slopeAngle).toBeLessThanOrEqual(6);
+    // 9.81*sin(5 deg) is 0.86 m/s^2, at or under the street drag — so standing
+    // still on it and doing nothing does not accelerate you anywhere.
+    expect(9.81 * Math.sin((level.terrain.slopeAngle * Math.PI) / 180)).toBeLessThan(1.1);
+  });
+
+  it('is built from rails and ledges rather than jumps', () => {
+    // Rails are the core of the reference, not a garnish.
+    const level = downtown();
+    const jib = level.features.filter((f) => f.kind === 'rail' || f.kind === 'box').length;
+    const kickers = level.features.filter((f) => f.kind === 'kicker').length;
+    expect(jib).toBeGreaterThan(8);
+    expect(jib).toBeGreaterThan(kickers * 4);
   });
 });

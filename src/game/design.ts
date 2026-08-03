@@ -9,9 +9,20 @@
  * rules so the levels read as layouts rather than coordinate soup.
  */
 
-import { makeFeature, makeId, type Feature, type RailShape, type TerrainBrush } from '../world/level.ts';
+import {
+  makeFeature,
+  makeId,
+  type Feature,
+  type PropKind,
+  type RailShape,
+  type TerrainBrush,
+} from '../world/level.ts';
 
-type PropKind = 'tree' | 'pine' | 'rock' | 'flag' | 'liftTower' | 'cabin' | 'sign' | 'tent';
+// This file used to declare its own `PropKind` — eight names, shadowing the
+// twenty-two in level.ts. The editor could place all of them and a hand-built
+// level could not, silently, because the narrower type was the one in scope
+// here. Nothing was wrong with the props; they were simply unreachable from
+// the design helpers. Importing the real union is the whole fix.
 
 // --- Single features -------------------------------------------------------
 

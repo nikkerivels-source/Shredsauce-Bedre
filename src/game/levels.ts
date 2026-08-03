@@ -650,6 +650,135 @@ export const PRESETS: LevelPreset[] = [
       return level;
     },
   },
+  {
+    id: 'downtown',
+    name: 'Downtown',
+    tagline: 'Snowed-in city block. Handrails, ledges, a stair set and a loading dock.',
+    difficulty: 'black',
+    build() {
+      const level = base('Downtown', 0x5714ce);
+      level.notes =
+        'Street. Flat ground, features back to back, and speed you have to work for — ' +
+        'push to keep it, pop to carry it. Ride it switch as much as forwards.';
+      // The first street level, and the first level of any kind that is not a
+      // mountain. Everything below follows from that one line: the ride model
+      // caps speed low, bleeds it when you stop pushing, and turns quick and
+      // skiddy instead of carving.
+      level.style = 'street';
+      level.discipline = 'ski';
+
+      // A city block falls away gently — enough that the run has a direction,
+      // not enough to be the speed source. Narrow, because a street is a
+      // corridor between buildings and not an open face. No banking: streets do
+      // not funnel you back to the middle, and the edges are where the good
+      // features are.
+      level.terrain.slopeAngle = 5;
+      level.terrain.length = 640;
+      level.terrain.width = 130;
+      level.terrain.roughness = 0.25;
+      level.terrain.featureScale = 40;
+      level.terrain.banking = 0;
+      // Hard, shallow and ungroomed: plowed city snow, not corduroy.
+      level.snow.hardness = 0.93;
+      level.snow.depth = 0.04;
+      level.snow.groomed = false;
+      level.weather.timeOfDay = 15.5;
+      level.weather.cloud = 0.12;
+      level.weather.fog = 0.06;
+      level.spawn = { x: 0, z: 14, heading: 0 };
+
+      const f = level.features;
+      const b = level.brushes;
+
+      // --- The plaza -------------------------------------------------------
+      // A short built bank to get moving, then an immediate choice: flat ledge
+      // on the left, round handrail on the right. The reference is never more
+      // than a few seconds from something, and that starts at the gate.
+      rollIn(b, 30, 1.5, 26);
+      f.push(
+        box(-9, 62, 14, { width: 2.6, height: 0.5 }),
+        rail(9, 64, 15, { height: 0.75, shape: 'round' }),
+        prop(-20, 58, 'bench', 1), prop(20, 70, 'barrel', 1),
+      );
+
+      // --- The stair set ---------------------------------------------------
+      // A real drop cut into the ground with a rail down beside it, so the same
+      // obstacle can be taken as a gap or as a handrail.
+      ledgeDrop(b, { x: 0, z: 150, drop: 2.4, length: 16, width: 60 });
+      f.push(
+        rail(-10, 141, 20, { height: 1.15, endHeight: 0.35, shape: 'flat' }),
+        kicker(14, 132, 1.1, { width: 8, lipAngle: 26 }),
+        prop(-28, 146, 'sign', 1), prop(26, 152, 'netFence', 1.1),
+      );
+
+      // --- The kerb --------------------------------------------------------
+      // A filler block, and it exists because a test said so: the gap from the
+      // stair set to the wall was 91 m, which at street speed is six seconds of
+      // pushing with nothing to do. The reference is never more than two to
+      // four seconds from a feature, so this is a low kerb ledge and a bank to
+      // keep the hands busy across the middle of the block.
+      f.push(
+        box(-16, 182, 15, { width: 2.4, height: 0.4 }),
+        quarterpipe(20, 196, { radius: 3.4, vert: 0.6, width: 13, heading: 180 }),
+        prop(-30, 188, 'crate', 0.9),
+      );
+
+      // --- The wall --------------------------------------------------------
+      // A long wallride down the left with a kinked rail opposite it, so the
+      // line crosses the street rather than running straight down one side.
+      f.push(
+        wallride(-26, 232, 22, { height: 3.4, lean: 6, heading: 6 }),
+        rail(8, 246, 18, { height: 1.0, kink: 20 }),
+        box(22, 258, 12, { width: 2.2, height: 0.7, endHeight: 0.4 }),
+      );
+
+      // --- Flat-down-flat --------------------------------------------------
+      // Three sections in line read as one long rail with two kinks. This is
+      // the switch-up feature: enough length to change slide angle twice.
+      f.push(
+        rail(-4, 322, 13, { height: 0.9, shape: 'square' }),
+        rail(-4, 338, 13, { height: 0.9, endHeight: 0.45, shape: 'square' }),
+        rail(-4, 354, 13, { height: 0.45, shape: 'square' }),
+        prop(-18, 330, 'crate', 1), prop(-18, 348, 'crate', 0.9),
+      );
+
+      // --- The loading dock ------------------------------------------------
+      // A raised deck to ollie onto, a bank off the right-hand wall, and a hip
+      // to change direction on.
+      ledgeDrop(b, { x: 18, z: 424, drop: 1.6, length: 12, width: 34 });
+      f.push(
+        box(18, 416, 16, { width: 3.4, height: 0.8 }),
+        quarterpipe(-30, 448, { radius: 4.2, vert: 0.9, width: 16, heading: 180 }),
+        hip(6, 470, 2.2, { width: 11, length: 14, hipAngle: 44 }),
+      );
+
+      // --- The last block --------------------------------------------------
+      f.push(
+        rail(-12, 528, 22, { height: 1.05, endHeight: 0.5 }),
+        box(12, 534, 18, { width: 2.8, height: 0.6 }),
+        rail(4, 570, 16, { height: 0.8, shape: 'flat' }),
+        quarterpipe(0, 604, { radius: 5, vert: 1.2, width: 24, heading: 180 }),
+      );
+
+      // --- The city --------------------------------------------------------
+      // Buildings are cabins at scale, lining both kerbs. There is no building
+      // prop and inventing one is not this task; at this size and spacing they
+      // read as a street corridor, which is what the run needs them to do.
+      for (let z = 40; z < 620; z += 46) {
+        f.push(prop(-52 - (z % 3), z, 'cabin', 3.4), prop(53 + (z % 4), z + 23, 'cabin', 3.1));
+      }
+      fenceLine(f, -40, 60, 600, 34);
+      fenceLine(f, 40, 60, 600, 34);
+      f.push(
+        prop(-34, 100, 'banner', 1.1),
+        prop(34, 300, 'banner', 1.1),
+        prop(-30, 500, 'speaker', 1),
+        prop(30, 200, 'sign', 1.1),
+        prop(-24, 580, 'barrel', 1),
+      );
+      return level;
+    },
+  },
 ];
 
 export function getPreset(id: string): LevelPreset | null {
