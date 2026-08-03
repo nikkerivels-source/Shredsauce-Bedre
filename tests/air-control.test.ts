@@ -425,4 +425,23 @@ describe('keyboard air axes — in flight', () => {
     expect(crouchWhileHeld).toBeGreaterThan(0.8);
     expect(poppedOnRelease).toBe(true);
   });
+
+  // --- Step 3: the pop, on both ride models -------------------------------
+
+  it('caps the load so holding too long is never better than timing it', () => {
+    // The one thing step 3 asks for that is deliverable: "someone who holds the
+    // button too long must not get a better jump than someone who times it".
+    // The cap is on the clock, so a long hold loads exactly as deep as a timed
+    // one and no deeper.
+    const timed = airTime(340);
+    const held = airTime(1200);
+    expect(held).toBeLessThanOrEqual(timed + 0.05);
+  });
+
+  it('still jumps from a tap now that load timing is per ride model', () => {
+    // The load timing moved into RideModel and is pushed into the input
+    // manager per level. The mountain's numbers must not have moved with it.
+    const tap = airTime(40);
+    expect(tap).toBeGreaterThan(0.4);
+  });
 });

@@ -90,6 +90,7 @@ class App {
     this.view.setRider(this.session.gear, this.profile.appearance);
 
     this.input = new InputManager(canvas, this.session.gear.discipline);
+    this.syncRideModel();
 
     // Separate simulations used purely as pose sources for replays and remote
     // riders — they are never stepped, only posed.
@@ -225,9 +226,24 @@ class App {
     this.view.setQuality(quality);
   }
 
+  /**
+   * Pushes the level's pop timing into the input manager.
+   *
+   * The load starts on a keystroke and must outlive the key going up, so it
+   * lives in the input manager — which has no idea what level is loaded, and
+   * should not. This is the one seam between them, called from everywhere a
+   * level arrives.
+   */
+  private syncRideModel(): void {
+    const model = this.session.sim.ride;
+    this.input.jumpFloor = model.loadFloor;
+    this.input.jumpFull = model.loadFull;
+  }
+
   private startRun(level: LevelDef, mode: GameMode, opts: { announce?: boolean } = {}): void {
     if (opts.announce !== false) this.tutorial = null;
     this.session.loadLevel(level);
+    this.syncRideModel();
     this.session.restart(mode);
     this.session.paused = false;
     this.view.loadLevel(level, this.session.field, this.session.grindSurfaces);
@@ -240,6 +256,7 @@ class App {
 
   private openEditor(level: LevelDef): void {
     this.session.loadLevel(level);
+    this.syncRideModel();
     this.session.paused = true;
     this.view.loadLevel(level, this.session.field, this.session.grindSurfaces);
     this.editor = new LevelEditor(this.session);

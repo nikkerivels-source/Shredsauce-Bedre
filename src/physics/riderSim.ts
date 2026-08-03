@@ -138,6 +138,51 @@ export interface RideModel {
    * the moment you stop.
    */
   pushAccel: number;
+  /**
+   * Scales the leg spring, and with it how much air a pop buys.
+   *
+   * Plumbed and left at 1 on both models, because measuring it said it is not
+   * the lever it looks like. Raising it makes jumps *smaller*: a stiffer leg
+   * reaches the bump stop and starts rebounding before the command is
+   * released, so the release adds nothing. Street airtime at a 320 ms load
+   * went 0.73 s at gain 1, 0.43 at 1.5, 0.35 at 2.2, 0.07 at 3.
+   */
+  popGain: number;
+  /**
+   * Shortest press that still pops, seconds.
+   *
+   * Equal to `loadFull` on both models today, so a tap and a timed hold give
+   * the same jump. Street was meant to split them — the spec asks for a tap
+   * worth ~0.4 s of air against a full load's 1.0-1.2 s — and the split is not
+   * currently shippable. See the note on `loadFull`.
+   */
+  loadFloor: number;
+  /**
+   * Load that counts as full, seconds. Holding past it buys nothing.
+   *
+   * The cap is real and works: holding stops deepening the load here rather
+   * than compressing on into the bump stop.
+   *
+   * The value is 0.32 on street rather than the 0.15-0.25 the spec asks for,
+   * because airtime is not a stable function of load time. Swept on street at
+   * 20 ms steps, holding for:
+   *
+   *     240 ms -> 0.31 s    300 ms -> 0.33 s    340 ms -> 0.34 s
+   *     260 ms -> 0.58 s    320 ms -> 0.73 s    400 ms -> 0.44 s
+   *
+   * Neighbouring holds differ by more than a factor of two, in both
+   * directions. There is no tuning to be done against that curve — any number
+   * picked from it is luck, the same way the 11.9 m kicker in the T9 ladder
+   * was luck. 0.32 is the local peak and it is where the mountain already
+   * sits, so both models are at least stable and predictable.
+   *
+   * The instability itself is the leg spring against its bump stop, and it has
+   * now produced a wrong answer three separate times: the uncommanded
+   * frontflip off a lip, the non-monotonic T9 rotation ladder, and this. It is
+   * contact-solver behaviour, which every spec so far has fenced off. Fixing
+   * it is what unblocks step 3's airtime targets, and nothing else will.
+   */
+  loadFull: number;
 }
 
 /** The game as it has always been. Every stock mountain uses this. */
@@ -147,6 +192,9 @@ export const MOUNTAIN_MODEL: Readonly<RideModel> = Object.freeze({
   turnGain: 1,
   holdGain: 1,
   pushAccel: 0,
+  popGain: 1,
+  loadFloor: 0.32,
+  loadFull: 0.32,
 });
 
 /**
@@ -176,6 +224,9 @@ export const STREET_MODEL: Readonly<RideModel> = Object.freeze({
   turnGain: 1.85,
   holdGain: 1.2,
   pushAccel: 7.5,
+  popGain: 1,
+  loadFloor: 0.32,
+  loadFull: 0.32,
 });
 
 export function rideModel(style: 'mountain' | 'street'): Readonly<RideModel> {
@@ -524,7 +575,7 @@ export class RiderSim {
 
     // Start the legs at the compression that actually supports the rider, so
     // they are not mid-extension on the first frame.
-    const kLeg = 7400 * this.gear.pop;
+    const kLeg = 7400 * this.gear.pop * this.ride.popGain;
     this.legLength = clamp(1.02 - (this.riderMass * this.tuning.gravity) / kLeg, 0.5, 1.02);
     this.legVelocity = 0;
     this.position.set(x, this.field.heightAt(x, z) + this.boardOffset, z);
@@ -1402,7 +1453,7 @@ export class RiderSim {
     const mu = (this.riderMass * gearMass) / (this.riderMass + gearMass);
     const kLeg = 7400 * this.gear.pop;
     const cLeg = 620;
-    const maxForce = 4200 * this.gear.pop;
+    const maxForce = 4200 * this.gear.pop * this.ride.popGain;
 
     const target = lerp(maxLeg, minLeg + 0.06, clamp01(input.crouch));
     const sub = dt / LEG_SUBSTEPS;

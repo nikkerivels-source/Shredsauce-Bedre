@@ -37,6 +37,9 @@ export interface InputSettings {
  */
 const JUMP_MIN_LOAD = 0.32;
 
+/** Load that counts as full on the mountain — the same, so a tap is a full jump. */
+const JUMP_FULL_LOAD = 0.32;
+
 export function defaultKeymap(): Record<string, string> {
   return {
     KeyA: 'leanLeft',
@@ -149,6 +152,16 @@ export class InputManager {
    */
   private jumpLoad = -1;
   private jumpHeld = false;
+  /**
+   * Load timing, set per level from the ride model.
+   *
+   * The input manager does not know what level is loaded, and should not — but
+   * the pop belongs to it, because the load starts on a keystroke and has to
+   * survive the key going up. So the app pushes the two numbers in when a level
+   * loads and they default to the mountain's.
+   */
+  jumpFloor = JUMP_MIN_LOAD;
+  jumpFull = JUMP_FULL_LOAD;
   private airborne = false;
   private detach: Array<() => void> = [];
   private grabList: GrabSpec[];
@@ -392,9 +405,17 @@ export class InputManager {
     // releasing. A held key never reaches the release branch, so holding still
     // means staying crouched.
     if (this.jumpLoad >= 0) {
+      // Full command the whole time, capped in duration rather than in depth.
+      //
+      // Ramping the command in proportion to the load looked equivalent and is
+      // not: the leg is a spring the sim integrates, and a slow ramp never
+      // compresses it, so every jump came out at zero air. What buys a bigger
+      // pop is *how long* the leg has been asked to compress, not how hard it
+      // was asked. The cap is on the clock, so holding past `jumpFull` cannot
+      // load deeper than timing it.
+      this.jumpLoad = Math.min(this.jumpLoad + dt, this.jumpFull);
       crouchTarget = 1;
-      this.jumpLoad += dt;
-      if (!this.jumpHeld && this.jumpLoad >= JUMP_MIN_LOAD) {
+      if (!this.jumpHeld && this.jumpLoad >= this.jumpFloor) {
         this.popRequest = 1;
         this.jumpLoad = -1;
       }
