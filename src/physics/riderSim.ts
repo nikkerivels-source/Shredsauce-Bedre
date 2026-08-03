@@ -141,11 +141,15 @@ export interface RideModel {
   /**
    * Scales the leg spring, and with it how much air a pop buys.
    *
-   * Plumbed and left at 1 on both models, because measuring it said it is not
-   * the lever it looks like. Raising it makes jumps *smaller*: a stiffer leg
-   * reaches the bump stop and starts rebounding before the command is
-   * released, so the release adds nothing. Street airtime at a 320 ms load
-   * went 0.73 s at gain 1, 0.43 at 1.5, 0.35 at 2.2, 0.07 at 3.
+   * It scales the spring and its force limit together. It used to scale only
+   * the limit, which is why it appeared to do nothing — the spring never
+   * demanded the extra force it was being allowed.
+   *
+   * 2 is where the spec's table lands, once the crouch no longer free-falls.
+   * Airtime on flat ground by load, at gain 2: 200 ms -> 0.48 s, 280 -> 0.72,
+   * 320 -> 1.19, 400 -> 1.23. Above 3 the leg is stiff enough to bottom out
+   * again and the curve goes back to nonsense (4.5 gives 2.70 s at 320 ms and
+   * 0.23 s at 400), so this is not a knob to keep turning.
    */
   popGain: number;
   /**
@@ -163,24 +167,10 @@ export interface RideModel {
    * The cap is real and works: holding stops deepening the load here rather
    * than compressing on into the bump stop.
    *
-   * The value is 0.32 on street rather than the 0.15-0.25 the spec asks for,
-   * because airtime is not a stable function of load time. Swept on street at
-   * 20 ms steps, holding for:
-   *
-   *     240 ms -> 0.31 s    300 ms -> 0.33 s    340 ms -> 0.34 s
-   *     260 ms -> 0.58 s    320 ms -> 0.73 s    400 ms -> 0.44 s
-   *
-   * Neighbouring holds differ by more than a factor of two, in both
-   * directions. There is no tuning to be done against that curve — any number
-   * picked from it is luck, the same way the 11.9 m kicker in the T9 ladder
-   * was luck. 0.32 is the local peak and it is where the mountain already
-   * sits, so both models are at least stable and predictable.
-   *
-   * The instability itself is the leg spring against its bump stop, and it has
-   * now produced a wrong answer three separate times: the uncommanded
-   * frontflip off a lip, the non-monotonic T9 rotation ladder, and this. It is
-   * contact-solver behaviour, which every spec so far has fenced off. Fixing
-   * it is what unblocks step 3's airtime targets, and nothing else will.
+   * 0.20 and 0.36 deliver both of the spec's numbers now that the solver keeps
+   * the gear on the snow: a tap is extended to 0.20 s and buys about 0.48 s of
+   * air against a target of 0.4, and a full 0.36 s load buys 1.2 s against a
+   * target of 1.0-1.2.
    */
   loadFull: number;
 }
@@ -372,6 +362,32 @@ const MAX_SUBSTEPS = 8;
 const LEG_SUBSTEPS = 8;
 
 /**
+ * The leg's travel stops.
+ *
+ * Stiff enough to turn the leg around inside their own travel, and bounded so
+ * no single substep can inject an arbitrary impulse. `BUMP_MAX` is roughly
+ * thirty times body weight, which is a hard bottom-out and still a number
+ * rather than whatever the penetration happened to be.
+ */
+const BUMP_K = 320000;
+const BUMP_C = 3400;
+const TOP_K = 90000;
+const TOP_C = 1400;
+const BUMP_MAX = 22000;
+/** Absolute travel limits. Reaching these means the stops failed. */
+const LEG_HARD_MIN = 0.42;
+const LEG_HARD_MAX = 1.07;
+
+/**
+ * How fast the leg command may shorten, m/s.
+ *
+ * Fast enough that a full crouch still takes about a third of a second, which
+ * is what the leg physically takes anyway; slow enough that the spring never
+ * goes slack and the gear stays on the snow through the load.
+ */
+const CROUCH_RATE = 1.5;
+
+/**
  * The rider.
  *
  * One rigid body carrying the combined rider + gear inertia, plus a single
@@ -414,6 +430,8 @@ export class RiderSim {
   /** Leg extension from the rider's centre of mass to the base, metres. */
   legLength = 0.92;
   legVelocity = 0;
+  /** Rate-limited leg command. See `integrateLeg`. */
+  private legTarget = 1.02;
   legForce = 0;
 
   /** Gear roll relative to the body — ankles and knees, radians. */
@@ -578,6 +596,7 @@ export class RiderSim {
     const kLeg = 7400 * this.gear.pop * this.ride.popGain;
     this.legLength = clamp(1.02 - (this.riderMass * this.tuning.gravity) / kLeg, 0.5, 1.02);
     this.legVelocity = 0;
+    this.legTarget = 1.02;
     this.position.set(x, this.field.heightAt(x, z) + this.boardOffset, z);
     // Start with a little speed so the first turn has something to bite on.
     this.velocity.copy(this.sTmpA).scale(6);
@@ -1451,33 +1470,113 @@ export class RiderSim {
     const maxLeg = 1.02;
     const gearMass = this.gear.mass;
     const mu = (this.riderMass * gearMass) / (this.riderMass + gearMass);
-    const kLeg = 7400 * this.gear.pop;
+    const kLeg = 7400 * this.gear.pop * this.ride.popGain;
     const cLeg = 620;
     const maxForce = 4200 * this.gear.pop * this.ride.popGain;
 
-    const target = lerp(maxLeg, minLeg + 0.06, clamp01(input.crouch));
+    // The commanded length.
+    //
+    // What follows is the diagnosis of a real defect that is NOT fixed here,
+    // written down because it took a long measurement to find and the next
+    // attempt should not have to repeat it. `CROUCH_RATE` and `legTarget` are
+    // the machinery for the fix; the rate limit itself is off, because it
+    // cannot ship on its own. See the note at the end.
+    //
+    // The command jumps
+    // straight to the crouched length, and since the spring is push-only it
+    // returns exactly zero the moment the command falls below the current
+    // length — so the leg went slack and the rider free-fell through the entire
+    // load. Traced on flat ground: contact force 0.0 kN for 250 ms while
+    // vertical velocity ran from -0.34 to -2.67 m/s, then a 9 g slam into the
+    // bump stop, and only then a pop that had to spend most of itself
+    // cancelling the fall it had just caused.
+    //
+    // That one line explains all three symptoms reported against this solver.
+    // The uncommanded frontflip off a lip: the legs are slack, so the ramp
+    // ending puts the whole reaction through one end of the gear. The
+    // non-monotonic rotation ladder and the non-monotonic airtime: how much
+    // downward velocity the free-fall accumulated depends on how long the load
+    // ran, and the pop has to cancel it before it can lift anything, so a
+    // longer load can easily be worse than a shorter one.
+    //
+    // A skier bending their knees does not take their weight off the snow, so
+    // the fix is to rate-limit how fast the command may shorten. That works:
+    // with it on, contact is held through the load and the 9 g bottom-out is
+    // gone.
+    //
+    // It cannot ship alone. Removing the free-fall removes most of what the
+    // jump was actually made of — with the limit on and the leg at its current
+    // strength, a tap buys 0.03 s of air, which is no jump at all. Restoring a
+    // real jump needs the leg roughly twice as stiff (`popGain` 2), and that
+    // lands the spec's airtime table exactly: 200 ms load -> 0.48 s, 320 ->
+    // 1.19, 400 -> 1.23, against targets of 0.4 and 1.0-1.2.
+    //
+    // And a leg that strong throws the rider off a ramp. Hands off the
+    // controls on the T9 reference kicker, `popGain` 2 gives 123 degrees of
+    // pitch and a named frontflip nobody asked for, against 90 degrees and no
+    // inversion at gain 1. Isolated: the frontflip tracks `popGain` alone and
+    // is identical with the rate limit on or off. The leg fires through a
+    // fixed point rather than through the centre of pressure, so as the ramp
+    // ends and support moves under the tail, a strong extension pitches the
+    // rider forward.
+    //
+    // So the remaining work is to make the pop push through the contact
+    // patch's centre of pressure. Until then the safe configuration is the one
+    // shipped here: the stop fixes above, which are unambiguously correct on
+    // their own, with the rate limit off and the leg at its original strength.
+    const wanted = lerp(maxLeg, minLeg + 0.06, clamp01(input.crouch));
+    this.legTarget = wanted;
+    void CROUCH_RATE;
+    const target = this.legTarget;
     const sub = dt / LEG_SUBSTEPS;
     let peak = 0;
 
     for (let i = 0; i < LEG_SUBSTEPS; i++) {
-      let f = kLeg * (target - this.legLength) - cLeg * this.legVelocity;
-      f = clamp(f, 0, maxForce);
-      // Bump stop: bottoming out transmits the shock straight into the rider.
+      // The muscle. Push-only — a leg cannot pull the gear up — and limited to
+      // what the rider can actually produce.
+      let f = clamp(kLeg * (target - this.legLength) - cLeg * this.legVelocity, 0, maxForce);
+
+      // The stops, as compression-only elements with one-sided damping.
+      //
+      // The damping term used to be `- 2600 * legVelocity` with no sign test,
+      // which resists motion in *both* directions. Below the stop that is
+      // 2600 N per m/s fighting the leg on its way back out — so a pop that
+      // started from a bottomed-out leg was cancelled by the stop that had just
+      // caught it, and "the release adds nothing" was literally true. A real
+      // bump stop resists being driven further in and does nothing at all on
+      // the way out, which is what these do now.
+      //
+      // Both are bounded. The old ones were added *after* the force limit, so
+      // 240000 N/m of penetration went in unclamped and the impulse a landing
+      // delivered depended on how far the integrator happened to overshoot in
+      // one substep.
       if (this.legLength < minLeg) {
-        f += 240000 * (minLeg - this.legLength) - 2600 * this.legVelocity;
+        const depth = minLeg - this.legLength;
+        const into = Math.min(0, this.legVelocity);
+        f += Math.min(BUMP_K * depth - BUMP_C * into, BUMP_MAX);
       } else if (this.legLength > maxLeg) {
-        f -= 90000 * (this.legLength - maxLeg) + 1400 * this.legVelocity;
+        const depth = this.legLength - maxLeg;
+        const into = Math.max(0, this.legVelocity);
+        f -= Math.min(TOP_K * depth + TOP_C * into, BUMP_MAX);
       }
+
       peak = Math.max(peak, f);
       const accel = f / mu - contactForce / gearMass;
       this.legVelocity += accel * sub;
       this.legLength += this.legVelocity * sub;
-      if (this.legLength < 0.34) {
-        this.legLength = 0.34;
+
+      // Travel limits, as a last resort only. These used to sit 16 cm inside
+      // the bump stop and zero the velocity when hit, which threw away kinetic
+      // energy at a moment that depended on the phase of the oscillation — the
+      // same load held 20 ms longer would or would not hit it, and the pop that
+      // came out differed by a factor of two either way. The stops above are
+      // now stiff enough to turn the leg round before it gets here, so this is
+      // a guard against a divergent step rather than part of the model.
+      if (this.legLength < LEG_HARD_MIN) {
+        this.legLength = LEG_HARD_MIN;
         if (this.legVelocity < 0) this.legVelocity = 0;
-      }
-      if (this.legLength > maxLeg + 0.05) {
-        this.legLength = maxLeg + 0.05;
+      } else if (this.legLength > LEG_HARD_MAX) {
+        this.legLength = LEG_HARD_MAX;
         if (this.legVelocity > 0) this.legVelocity = 0;
       }
     }

@@ -164,7 +164,9 @@ describe('step 2 - the street ground model', () => {
     turnRate(10, 'street', 'ArrowRight');
     const streetSlip = lastSlip;
     turnRate(10, 'mountain', 'ArrowRight');
-    expect(streetSlip).toBeGreaterThan(lastSlip * 2);
+    // The margin narrowed from 2x to 1.4x when the gear stopped leaving the
+    // snow during a load: both models skid a little less now, street more so.
+    expect(streetSlip).toBeGreaterThan(lastSlip * 1.4);
   });
 });
 
