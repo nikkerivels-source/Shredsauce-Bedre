@@ -5,7 +5,7 @@
  * this shape, so a level is fully reproducible from its JSON (plus its seed).
  */
 
-export const LEVEL_FORMAT_VERSION = 5;
+export const LEVEL_FORMAT_VERSION = 6;
 
 export type FeatureKind =
   | 'kicker'
@@ -272,6 +272,20 @@ export interface TerrainSettings {
   banking: number;
 }
 
+/**
+ * Which ride model a level uses.
+ *
+ * `mountain` is the game as it has always been: gravity is the speed source,
+ * there is no ceiling, and a long pitch keeps giving. `street` is the reference
+ * loop — near-flat ground where speed has to be worked for, held to a low
+ * ceiling, with quick skiddy direction changes instead of long carves.
+ *
+ * It is per level and not a global setting because both are wanted. The ten
+ * stock mountains are mountains; a street course is a street course; and the
+ * numbers that are right for one are wrong for the other.
+ */
+export type RideStyle = 'mountain' | 'street';
+
 export interface LevelDef {
   version: number;
   id: string;
@@ -287,6 +301,8 @@ export interface LevelDef {
   notes: string;
   seed: number;
   discipline: 'ski' | 'snowboard' | 'both';
+  /** Ride model. Absent in levels saved before v6, which are all mountains. */
+  style: RideStyle;
   terrain: TerrainSettings;
   snow: SnowSettings;
   weather: WeatherSettings;
@@ -379,6 +395,7 @@ export function emptyLevel(name = 'Untitled Line'): LevelDef {
     notes: '',
     seed: (Math.random() * 0xffffffff) >>> 0,
     discipline: 'both',
+    style: 'mountain',
     terrain: defaultTerrain(),
     snow: defaultSnow(),
     weather: defaultWeather(),
@@ -462,6 +479,10 @@ export function migrateLevel(raw: unknown): LevelDef {
       src.discipline === 'ski' || src.discipline === 'snowboard' || src.discipline === 'both'
         ? src.discipline
         : 'both',
+    // Absent means a level written before street existed, and everything
+    // written before street existed is a mountain. Never guess from the slope
+    // angle: a shallow mountain is still a mountain.
+    style: src.style === 'street' ? 'street' : 'mountain',
     terrain: { ...base.terrain, ...(src.terrain as TerrainSettings | undefined) },
     snow: { ...base.snow, ...(src.snow as SnowSettings | undefined) },
     weather: { ...base.weather, ...(src.weather as WeatherSettings | undefined) },

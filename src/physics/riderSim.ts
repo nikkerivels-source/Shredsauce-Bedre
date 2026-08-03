@@ -41,6 +41,14 @@ export interface RiderInput {
   lean: number;
   /** -1..1 fore/aft weighting. Presses the nose or the tail. */
   weight: number;
+  /**
+   * -1..1 skate push. Positive drives forward, negative brakes.
+   *
+   * Read only by ride models that set `pushAccel`, which today means street.
+   * On a mountain gravity is the speed source and this is ignored, so the same
+   * key can carry a different meaning on each without a mode switch.
+   */
+  push: number;
   /** -1..1 upper-body twist. Winds up rotation against the edge. */
   twist: number;
   /** 0..1 leg compression. Load it, then release to pop. */
@@ -62,6 +70,7 @@ export function neutralInput(): RiderInput {
   return {
     lean: 0,
     weight: 0,
+    push: 0,
     twist: 0,
     crouch: 0,
     tuck: 0,
@@ -82,6 +91,95 @@ export interface SimTuning {
    * 1 = the game holds your edge and squares you up on landing.
    */
   assist: number;
+}
+
+/**
+ * The part of the ride model that a level chooses.
+ *
+ * Two sets of numbers, because two kinds of riding are wanted and the numbers
+ * that are right for one are wrong for the other. A mountain is a gravity
+ * problem: speed comes from the pitch, there is no ceiling, and turns are long
+ * because you are carrying a lot of momentum. Street is a work problem: the
+ * ground is near flat, speed has to be earned and bleeds away when you stop
+ * earning it, and direction changes are short skids rather than carves.
+ */
+export interface RideModel {
+  /** Speed the drag term holds a sustained pitch to, m/s. Infinity disables it. */
+  topSpeed: number;
+  /** Deceleration applied whenever grounded, m/s^2. This is what bleeds speed. */
+  drag: number;
+  /**
+   * Multiplier on the twist steering torque — the Q/E axis only.
+   *
+   * Measured and worth stating so nobody tunes it expecting more: it has no
+   * effect whatsoever on lean turning, which is what the arrow keys do and
+   * what almost all steering actually is. Sweeping it 1.0 -> 1.85 changed a
+   * lean turn by nothing at all, to the digit.
+   */
+  turnGain: number;
+  /**
+   * Multiplier on the hold that drives the gear toward the travel direction.
+   *
+   * The sign of this is the opposite of the obvious guess and it cost a sweep
+   * to find out. Weakening the hold does not make the rider turn quicker and
+   * skiddier — it makes the gear slide without rotating, which reads as no turn
+   * at all. Measured on street at 10 degrees, mean heading rate over a 1.5 s
+   * lean: 0.3 -> 10 deg/s, 0.8 -> 136, 1.2 -> 237, 2.6 -> 538 and spinning out.
+   * Turning *up* is what buys a quick direction change.
+   */
+  holdGain: number;
+  /**
+   * Forward acceleration a held push buys, m/s^2. 0 disables pushing entirely.
+   *
+   * This is the part that makes street possible at all. On near-flat ground
+   * gravity supplies almost nothing — 9.81*sin(4 deg) is 0.68 m/s^2, less than
+   * the drag below — so without an input-driven source the rider simply stops.
+   * The reference agrees: speed there comes from working for it, and falls away
+   * the moment you stop.
+   */
+  pushAccel: number;
+}
+
+/** The game as it has always been. Every stock mountain uses this. */
+export const MOUNTAIN_MODEL: Readonly<RideModel> = Object.freeze({
+  topSpeed: Infinity,
+  drag: 0,
+  turnGain: 1,
+  holdGain: 1,
+  pushAccel: 0,
+});
+
+/**
+ * Street.
+ *
+ * Measured, and two of the numbers are a compromise that should be stated
+ * rather than discovered later.
+ *
+ * `topSpeed` is a ceiling the drag term enforces rather than a clamp, so a
+ * steep block still feels faster than a flat one; it just cannot run away.
+ * That part works: 12.4-14.5 m/s sustained across 4-16 degrees, against a
+ * 12-16 target, and speed falls hard when you stop pushing (13.9 -> 6.8 m/s
+ * in four seconds at 10 degrees).
+ *
+ * `pushAccel` is 7.5 and not the ~3 the spec asks for, because 3 does not
+ * reach the speed the spec also asks for. The two targets fight: at the
+ * `holdGain` needed for a quick direction change the contact solver scrubs
+ * enough speed that a 3.4 push tops out at 5.3 m/s, and only around 7.5 gets
+ * to 14. Shipping the speed target costs an initial acceleration of about
+ * 17 m/s^2 rather than 3 — snappier off the mark than the reference. Fixing
+ * that properly means changing how the hold scrubs, which is contact-solver
+ * work the earlier specs fenced off.
+ */
+export const STREET_MODEL: Readonly<RideModel> = Object.freeze({
+  topSpeed: 14,
+  drag: 0.85,
+  turnGain: 1.85,
+  holdGain: 1.2,
+  pushAccel: 7.5,
+});
+
+export function rideModel(style: 'mountain' | 'street'): Readonly<RideModel> {
+  return style === 'street' ? STREET_MODEL : MOUNTAIN_MODEL;
 }
 
 export function defaultTuning(): SimTuning {
@@ -257,6 +355,8 @@ export class RiderSim {
   private readonly sTelRight = new Vec3();
   private readonly sTelFwd = new Vec3();
   gear: GearSpec;
+  /** Ground model for this level. Set once from `level.style`. */
+  ride: Readonly<RideModel> = MOUNTAIN_MODEL;
   riderMass = 72;
   tuning: SimTuning;
 
@@ -390,6 +490,7 @@ export class RiderSim {
   ) {
     this.field = field;
     this.level = level;
+    this.ride = rideModel(level.style);
     this.grindSurfaces = grindSurfaces;
     this.gear = gear;
     this.tuning = tuning;
@@ -476,6 +577,7 @@ export class RiderSim {
     this.sForce.y -= M * this.tuning.gravity;
 
     this.applyAerodynamics(input);
+    this.applyRideDrag(input);
     this.solvePoles(dt, input);
 
     // Surface reference under the rider.
@@ -724,6 +826,54 @@ export class RiderSim {
   }
 
   private readonly currentInertia = new Vec3(13, 2, 13);
+
+  /**
+   * The street speed budget.
+   *
+   * Two terms, and they do different jobs. `drag` is a flat deceleration that
+   * runs the whole time you are on the ground: it is why speed falls away when
+   * you stop working for it, which is the thing that makes street street. The
+   * ceiling term is quadratic in the overshoot past `topSpeed`, so it does
+   * nothing at all below the ceiling — a steep block still feels faster than a
+   * flat one — and rises hard above it rather than clamping, which would read
+   * as hitting a wall.
+   *
+   * Grounded only. In the air the rider is ballistic and the existing
+   * aerodynamics already own that.
+   */
+  private applyRideDrag(input: RiderInput): void {
+    if (!onGround(this.state) && this.state !== 'grinding') return;
+    const model = this.ride;
+    if (model.drag <= 0 && !Number.isFinite(model.topSpeed)) return;
+
+    const v = this.sTmpA.copy(this.velocity);
+    v.y = 0;
+    const speed = v.length();
+    if (speed < 0.05) return;
+    v.scale(1 / speed);
+
+    let decel = model.drag;
+    if (Number.isFinite(model.topSpeed) && speed > model.topSpeed) {
+      const over = speed - model.topSpeed;
+      decel += over * over * 0.9;
+    }
+    this.sForce.addScaled(v, -decel * this.totalMass);
+
+    // Pushing. Only below the ceiling, and only along the direction the gear is
+    // actually pointing, so it skates you forward rather than shoving you
+    // sideways out of a turn.
+    if (model.pushAccel > 0 && input.push > 0 && speed < model.topSpeed) {
+      const fwd = this.sTmpB.copy(this.sFwdS);
+      fwd.y = 0;
+      const len = fwd.length();
+      if (len > 0.01) {
+        fwd.scale(1 / len);
+        // Pushing backwards is braking, not reverse: the sign follows travel.
+        const sense = fwd.dot(v) < 0 ? -1 : 1;
+        this.sForce.addScaled(fwd, sense * input.push * model.pushAccel * this.totalMass);
+      }
+    }
+  }
 
   private applyAerodynamics(input: RiderInput): void {
     const w = this.level.weather;
@@ -1341,7 +1491,7 @@ export class RiderSim {
       // Twisting the upper body steers the gear, reacting against the edge. The
       // harder the edge is loaded, the more authority you have.
       const grip = clamp01(contactForce / (this.totalMass * this.tuning.gravity * 1.4));
-      const yawTorque = input.twist * 52 * grip;
+      const yawTorque = input.twist * 52 * grip * this.ride.turnGain;
       this.sTorque.addScaled(this.sNormal, yawTorque);
 
       this.applyDirectionalHold(dt, input, grip);
@@ -1402,7 +1552,8 @@ export class RiderSim {
     if (Math.abs(beta) > 1.3) return;
 
     const I = this.currentInertia.y;
-    const strength = (0.4 + 0.6 * this.tuning.assist) * grip * (1 - Math.min(1, Math.abs(input.twist)));
+    const strength =
+      (0.4 + 0.6 * this.tuning.assist) * grip * (1 - Math.min(1, Math.abs(input.twist))) * this.ride.holdGain;
     const kp = I * 46 * strength;
     const kd = I * 9 * strength;
     this.sTorque.addScaled(this.sNormal, -beta * kp - betaRate * kd);

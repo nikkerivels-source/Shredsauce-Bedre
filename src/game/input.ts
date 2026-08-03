@@ -476,6 +476,8 @@ export class InputManager {
 
     i.lean = this.leanAxis;
     i.weight = this.weightAxis;
+    // Same stick, different meaning per ride model. See RideModel.pushAccel.
+    i.push = this.weightAxis;
     i.twist = this.twistAxis;
     i.crouch = this.crouchAxis;
     i.tuck = clamp01(tuck);
