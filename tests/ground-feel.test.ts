@@ -90,18 +90,21 @@ function coast(slopeDeg: number, seconds: number, style: 'mountain' | 'street' =
 
 /** Peak yaw rate, deg/s, while holding a turn key. */
 let lastSlip = 0;
+let lastAirFraction = 0;
 function turnRate(slopeDeg: number, style: 'mountain' | 'street', key: string): number {
   const { sim, input } = rig(slopeDeg, style);
   const dt = 1 / 120;
   if (style === 'street') down('ArrowUp');
   for (let s = 0; s < 120 * 8; s++) sim.step(dt, input.update(dt, sim.telemetry.airborne));
   down(key);
+  let airFrames = 0;
   let total = 0;
   let slipSum = 0;
   const steps = Math.round(120 * 1.5);
   let prev = Math.atan2(sim.velocity.x, sim.velocity.z);
   for (let s = 0; s < steps; s++) {
     sim.step(dt, input.update(dt, sim.telemetry.airborne));
+    if (sim.telemetry.airborne) airFrames++;
     const now = Math.atan2(sim.velocity.x, sim.velocity.z);
     let d = now - prev;
     if (d > Math.PI) d -= 2 * Math.PI;
@@ -115,6 +118,7 @@ function turnRate(slopeDeg: number, style: 'mountain' | 'street', key: string): 
   }
   up(key);
   const mean = total / (steps * dt);
+  lastAirFraction = airFrames / steps;
   lastSlip = slipSum / steps;
   if (style === 'street') up('ArrowUp');
   return mean;
@@ -163,9 +167,18 @@ describe('step 2 - the street ground model', () => {
     // is right even where the magnitude is at the low end of the band.
     turnRate(10, 'street', 'ArrowRight');
     const streetSlip = lastSlip;
+    const streetAir = lastAirFraction;
     turnRate(10, 'mountain', 'ArrowRight');
     // The margin narrowed from 2x to 1.4x when the gear stopped leaving the
     // snow during a load: both models skid a little less now, street more so.
+    // Both runs are fully grounded — 0 percent airborne — which is the point.
+    // When the air-control branch was gated on its own force threshold rather
+    // than on the state, these numbers moved every time an air constant did.
+    // Both runs are essentially grounded. A hard street turn does unweight for
+    // a few frames — 7 percent here — and that is real riding; what matters is
+    // that neither run is secretly a flight.
+    expect(streetAir).toBeLessThan(0.12);
+    expect(lastAirFraction).toBeLessThan(0.12);
     expect(streetSlip).toBeGreaterThan(lastSlip * 1.4);
   });
 });

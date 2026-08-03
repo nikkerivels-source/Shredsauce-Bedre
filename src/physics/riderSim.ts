@@ -346,11 +346,11 @@ export interface Telemetry {
  *
  * Measured on the reference jump documented above `applyControlTorques`.
  */
-const AIR_GAIN_YAW = 15;
-const AIR_GAIN_PITCH = 10;
-const AIR_GAIN_ROLL = 7;
+const AIR_GAIN_YAW = 20;
+const AIR_GAIN_PITCH = 13.3;
+const AIR_GAIN_ROLL = 9.3;
 /** How fast a held key spends its reservoir, per second. */
-const AIR_FILL = 1.1;
+const AIR_FILL = 3.0;
 /** Reservoir recovery while the axis is being pushed, per second. */
 const AIR_RELAX_HELD = 0.55;
 /** Reservoir recovery while the axis is released, per second. */
@@ -1694,7 +1694,22 @@ export class RiderSim {
    * and proves nothing about this one.
    */
   private applyControlTorques(dt: number, input: RiderInput, contactForce: number): void {
-    const grounded = contactForce > 60;
+    // One definition of airborne, and it is the state machine's.
+    //
+    // This used to test `contactForce > 60` while the state machine uses 45,
+    // so anything in between — an edge unweighted mid-turn, the light moment
+    // between two contact solves — ran the *air* control branch on a rider who
+    // was demonstrably on the snow. Telemetry said grounded and the air
+    // torques fired anyway.
+    //
+    // It stayed invisible while the air gains were small. Raising them for
+    // step 4 made it loud: a street turn's slip collapsed from 7.5 degrees to
+    // 0.5 because the yaw axis was quietly steering the gear straight during
+    // the unweighted part of every turn, and a coasting run held speed it
+    // should have lost. Both are ground measurements that moved when only air
+    // constants had changed, which is what gave it away.
+    const grounded = !(this.state === 'airborne');
+    void contactForce;
 
     if (grounded) {
       // Twisting the upper body steers the gear, reacting against the edge. The

@@ -221,7 +221,18 @@ export class TrickTracker {
     quality: number,
     time: number,
   ): TrickResult {
-    const rounded = Math.round(spinDeg / 180) * 180;
+    // Rounded to 90, not 180.
+    //
+    // The reference's rotations are 180, 270, 360 and 450 — technical amounts,
+    // and two of those four are odd multiples of 90 that a 180-degree round
+    // simply cannot name. It would call a 270 either a 180 or a 360, and since
+    // step 4 brought the whole ladder down into exactly that range, half the
+    // vocabulary was unreachable.
+    //
+    // 90 itself is not a trick, so the naming threshold below stays at 180: a
+    // small rotation off a lip still reads as a straight air rather than as a
+    // "90".
+    const rounded = Math.round(spinDeg / 90) * 90;
     const frontside = air.spin > 0;
     const offAxis = this.axisTilt(air);
 
