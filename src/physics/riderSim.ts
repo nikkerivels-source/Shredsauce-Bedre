@@ -995,8 +995,20 @@ export class RiderSim {
    * edge angle you asked for given how far the body has already inclined.
    */
   private updateAngulation(input: RiderInput, inclination: number, dt: number): void {
-    const maxAngulation = 48 * DEG;
-    const maxEdge = 64 * DEG;
+    // How far the rider may tip the gear over.
+    //
+    // These were 48 and 64 degrees, and 64 is not a number a skier holds — it
+    // is a ski lying on its side with almost no contact patch. Simply holding
+    // the turn key reached it, and what followed was not subtle: the rider
+    // toppled onto their back after three and a half seconds of turning on the
+    // first stock mountain. No jump, no rail, no trick. Just a turn, on the
+    // level everyone plays first.
+    //
+    // 41 degrees is the top of where real carving lives, and it is enough to
+    // hold a turn on ice and in soft snow without the edge washing out.
+    // `tests/turn-feel.ts` rides both and asserts the rider is still upright.
+    const maxAngulation = 32 * DEG;
+    const maxEdge = 41 * DEG;
     const raw = input.lean * maxAngulation;
     const assisted = input.lean * maxEdge - inclination;
     const target = clamp(lerp(raw, assisted, this.tuning.assist), -maxAngulation, maxAngulation);
