@@ -23,16 +23,30 @@ export interface RiderAppearance {
   skin: string;
 }
 
-/** Freeski default: dark baggy shell over bright pants. */
+/**
+ * The default kit, taken from the reference.
+ *
+ * It used to be a near-black shell over orange pants, with a near-black lens
+ * and near-black gloves and boots on top of that. Against snow the whole upper
+ * body collapsed into one unreadable silhouette with bright legs under it —
+ * you could not see a shoulder, an elbow or a hood, only an outline. Every
+ * reference image is the other way round: one saturated garment colour that
+ * carries the figure, dark trousers under it, and the goggle lens as the only
+ * warm accent in the frame.
+ *
+ * These are the numbers from the art direction's own palette for the purple
+ * rider, and they are the point of the whole look: flat, fully saturated,
+ * readable at any distance.
+ */
 export function defaultAppearance(): RiderAppearance {
   return {
-    jacket: '#23272f',
-    pants: '#e0622a',
-    helmet: '#1a1d23',
-    goggles: '#101318',
-    gloves: '#16181c',
-    boots: '#2a2e35',
-    board: '#3f97e0',
+    jacket: '#7a4bc8',
+    pants: '#1a1a1e',
+    helmet: '#4a3a9e',
+    goggles: '#e8d84a',
+    gloves: '#1a1a1e',
+    boots: '#26262c',
+    board: '#5b48c0',
     skin: '#c99b76',
   };
 }
@@ -122,7 +136,7 @@ export class RiderMesh {
     const ghost = this.ghost;
 
     const mat = (key: keyof RiderAppearance, extra?: Partial<THREE.MeshStandardMaterialParameters>) => {
-      const id = `${key}:${extra?.roughness ?? 'd'}:${extra?.metalness ?? 'd'}`;
+      const id = `${key}:${extra?.roughness ?? 'd'}:${extra?.metalness ?? 'd'}:${extra?.emissiveIntensity ?? 'd'}`;
       let m = this.materials.get(id);
       if (!m) {
         m = new THREE.MeshStandardMaterial({
@@ -178,7 +192,17 @@ export class RiderMesh {
 
     this.goggles = new THREE.Mesh(
       new THREE.CylinderGeometry(0.139, 0.139, 0.088, 16, 1, true, -0.95, 1.9),
-      mat('goggles', { roughness: 0.14, metalness: 0.6 }),
+      mat('goggles', {
+        roughness: 0.14,
+        metalness: 0.6,
+        // The one bright thing on the rider, and the only warm accent in the
+        // frame. Without the emissive it takes the same cool light as
+        // everything else and a warm yellow lens renders olive, which reads as
+        // a sticker rather than as glass. Tinted from the slot colour, so a
+        // player who picks a different lens gets their colour lit, not this one.
+        emissive: new THREE.Color(appearance.goggles),
+        emissiveIntensity: 0.5,
+      }),
     );
     this.group.add(this.goggles);
 
@@ -311,6 +335,7 @@ export class RiderMesh {
     this.appearance = appearance;
     for (const material of this.materials.values()) {
       const key = material.userData.key as keyof RiderAppearance | undefined;
+      if (key && material.emissiveIntensity > 0) material.emissive.set(appearance[key]);
       if (key && appearance[key]) material.color.set(appearance[key]);
     }
   }

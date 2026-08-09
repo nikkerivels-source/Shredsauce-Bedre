@@ -521,7 +521,16 @@ export function createSky(scene: THREE.Scene, level: LevelDef): SkyRig {
       sun.position.copy(dir).multiplyScalar(180);
       sun.intensity = lerp(3.1, 0.55, w.cloud) * lerp(0.35, 1, clamp01(Math.sin(elevation) * 2));
       sun.color.copy(sunColor).lerp(new THREE.Color(0xffffff), 0.45);
-      ambient.intensity = lerp(0.9, 1.9, w.cloud);
+      // Art direction 5: the fill, and the ratio it sets against the sun.
+      //
+      // At a clear midday this was sun 3.05 against hemi 0.92, better than 3:1,
+      // and a 3:1 ratio on snow means the shaded side of every roll goes to a
+      // dead flat grey — which is most of why the slope read as a white void
+      // with no shape in it. The reference's shadow sides are far brighter than
+      // that. Raising the fill rather than dropping the sun is deliberate: it
+      // keeps the lit snow bright and clipped, which is the look, and only
+      // lifts what was crushed.
+      ambient.intensity = lerp(1.45, 2.1, w.cloud);
       // Sky light is bluish but nowhere near as saturated as the zenith itself;
       // using the raw sky colour turns snow into a blue sheet.
       ambient.color.copy(uniforms.uTopColor.value).lerp(WHITE, 0.68);
@@ -742,8 +751,16 @@ export function buildMountainRange(level: LevelDef, field: Heightfield): THREE.G
   // kilometres the crests subtended about ten degrees and read as a ribbon.
   const maxHeight = 1150;
 
-  const rings = 34;
-  const cols = 220;
+  // Resolution, and it is a look problem rather than a performance one.
+  //
+  // 34 rings against 220 columns makes every quad six times longer than it is
+  // wide, and with flat shading each of those slivers takes one normal — which
+  // is exactly the vertical fluting that made the skyline read as corrugated
+  // paper. The rings themselves were visible too, as contour banding across
+  // the faces. Squaring the quads up costs 23k vertices against 8k, which is
+  // nothing next to a single tree stand, and both artefacts go away.
+  const rings = 72;
+  const cols = 320;
   const vertexCount = (cols + 1) * (rings + 1);
   const positions = new Float32Array(vertexCount * 3);
   const colors = new Float32Array(vertexCount * 3);
@@ -833,31 +850,39 @@ export function buildMountainRange(level: LevelDef, field: Heightfield): THREE.G
       // them. All anyone ever sees of a range is its crests. Those are also the
       // rockiest part of a real skyline, because the wind scours the summit
       // ridges bare while snow sits on the gentler ground below.
-      const alt = clamp01((shape - 0.86) / 0.17);
+      const alt = clamp01((shape - 0.70) / 0.22);
       // Patchy, so the snowline is broken up rather than a clean contour.
       const patch = fbm2D(cos * 11 + rt * 6, sin * 11, level.seed + 5501, 3);
-      const rock = clamp01((steep * 0.5 + alt * 0.85 - 0.28 + patch * 0.2) / 0.6);
+      // Opened up. At the old threshold the skyline was white on white and had
+      // no form to read at any distance; rock is what gives a range its shape.
+      const rock = clamp01((steep * 0.62 + alt * 0.95 - 0.2 + patch * 0.22) / 0.55);
 
       // Rock is a cool dark grey; the sunward side of a face is much lighter
       // than the shaded side, which is the other half of reading as stone.
       //
-      // These numbers are much lower than a rock albedo has any right to be,
-      // and deliberately. The scene runs a bright sun into ACES tone mapping,
-      // which compresses the top of the range hard: a physically sensible 0.35
-      // rock came out of the pipeline at about 77% grey, near enough to snow's
-      // 94% that the whole skyline read as white. Working back from the wanted
-      // output rather than forward from the material is what gets stone.
+      // These were worked back from ACES tone mapping, which the renderer no
+      // longer does — art direction 1 took it out because it desaturated
+      // everything it brightened. Numbers derived from a compression curve
+      // that is gone are just wrong numbers, and they were: rock authored to
+      // land at mid grey after the shoulder now goes straight to the frame,
+      // so the range came out near black where it was meant to read as stone.
+      //
+      // Re-derived for a linear pipeline, and warmer. Alpine rock under snow
+      // light is a brown-grey, not a neutral one; neutral grey against white
+      // snow is what makes a range look like a photocopy.
       const facing = clamp01(0.5 + gradA * 0.55);
-      const rockShade = 0.07 + facing * 0.17;
+      const rockShade = 0.24 + facing * 0.26;
       const snowShade = 0.9 + clamp01(h / maxHeight) * 0.1;
 
       // Aerial perspective is the scene's exponential fog, and only that.
       // Baking a second distance wash into the vertex colours here stacked on
       // top of it and turned the whole range white — the rock was being
       // computed correctly and then erased twice over.
-      colors[i * 3] = lerp(snowShade * 0.97, rockShade * 1.02, rock);
-      colors[i * 3 + 1] = lerp(snowShade * 0.99, rockShade * 1.0, rock);
-      colors[i * 3 + 2] = lerp(snowShade * 1.0, rockShade * 1.06, rock);
+      // Snow keeps its faint blue cast; rock is pushed warm, so the two read
+      // as different materials rather than as two greys.
+      colors[i * 3] = lerp(snowShade * 0.97, rockShade * 1.1, rock);
+      colors[i * 3 + 1] = lerp(snowShade * 0.99, rockShade * 0.98, rock);
+      colors[i * 3 + 2] = lerp(snowShade * 1.0, rockShade * 0.88, rock);
     }
   }
 

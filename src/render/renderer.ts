@@ -150,7 +150,10 @@ export class WorldView {
     this.renderer.shadowMap.enabled = quality.shadows;
     // PCFSoft is deprecated in current three and silently downgrades to PCF
     // while warning on every boot. Ask for what we actually get.
-    this.renderer.shadowMap.type = THREE.PCFShadowMap;
+    // Soft shadows. The contact shadow under the skis is a focal point at the
+    // camera distances this game actually uses, and a hard stencil edge on it
+    // is one of the things that reads as untextured placeholder geometry.
+    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     // No tone mapping, and let the snow clip.
     //
     // Note for anyone reading this next to the render target in post.ts: three
